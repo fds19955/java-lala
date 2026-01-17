@@ -36,7 +36,7 @@ services:
           cpus: '1.0'      # 保证1个CPU核心
           memory: 2048M    # 保证2GB内存
     ports:
-      - "8929:8929"
+      - "8929:80"
       - "2224:22"
     volumes:
       - /home/ubuntu/gitlab/config:/etc/gitlab
