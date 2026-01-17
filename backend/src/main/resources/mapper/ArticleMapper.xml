@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.articlesystem.mapper.ArticleMapper">
+
+    <resultMap id="ArticleResultMap" type="org.example.articlesystem.entity.Article">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="coverImage" column="cover_image"/>
+        <result property="authorId" column="author_id"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="authorName" column="author_name"/>
+        <result property="categoryAlias" column="category_alias"/>
+    </resultMap>
+
+    <insert id="insertArticle" parameterType="org.example.articlesystem.entity.Article"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO article (title, category_id, cover_image, author_id, status, create_time)
+        VALUES (#{title}, #{categoryId}, #{coverImage}, #{authorId}, #{status}, NOW())
+    </insert>
+
+    <update id="deleteArticleById" parameterType="int">
+        UPDATE article SET status = 0 WHERE id = #{id}
+    </update>
+
+    <update id="updateArticle" parameterType="org.example.articlesystem.entity.Article">
+        UPDATE article
+        SET title = #{title}, category_id = #{categoryId},
+            cover_image = #{coverImage}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectArticleById" parameterType="int" resultMap="ArticleResultMap">
+        SELECT a.*, c.name as category_name, c.category_alias,
+               u.username as author_name
+        FROM article a
+                 LEFT JOIN category c ON a.category_id = c.id
+                 LEFT JOIN user u ON a.author_id = u.id
+        WHERE a.id = #{id} AND a.status = 1
+    </select>
+
+    <sql id="selectArticleWhere">
+        WHERE a.status = 1
+        <if test="categoryId != null">
+            AND a.category_id = #{categoryId}
+        </if>
+        <if test="authorId != null">
+            AND a.author_id = #{authorId}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (a.title LIKE CONCAT('%', #{keyword}, '%')
+            OR c.name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </sql>
+
+    <select id="selectArticleList" parameterType="map" resultMap="ArticleResultMap">
+        SELECT a.*, c.name as category_name, c.category_alias,
+        u.username as author_name
+        FROM article a
+        LEFT JOIN category c ON a.category_id = c.id
+        LEFT JOIN user u ON a.author_id = u.id
+        <include refid="selectArticleWhere"/>
+        ORDER BY a.create_time DESC
+        <if test="start != null and limit != null">
+            LIMIT #{start}, #{limit}
+        </if>
+    </select>
+
+    <select id="selectArticleCount" parameterType="map" resultType="int">
+        SELECT COUNT(*)
+        FROM article a
+        LEFT JOIN category c ON a.category_id = c.id
+        <include refid="selectArticleWhere"/>
+    </select>
+
+</mapper>
