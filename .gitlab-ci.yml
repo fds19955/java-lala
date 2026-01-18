@@ -107,7 +107,7 @@ deploy-production:
   script:
     # 生成生产环境docker-compose文件
     - |
-      cat > docker-compose.prod.yml << EOF
+      cat > docker-compose.prod.yml << 'EOF'
       version: '3.8'
       services:
         mysql-db:
@@ -193,4 +193,3 @@ deploy-production:
     - feature/initial-commit
   tags:
     - docker
-
