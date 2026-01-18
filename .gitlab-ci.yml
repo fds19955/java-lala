@@ -15,10 +15,15 @@ variables:
   DEPLOY_SERVER: "49.233.185.174"
   DEPLOY_USER: "ubuntu"
   DEPLOY_PORT: "22"
+  # 配置国内镜像源
+  MAVEN_MIRROR: "https://maven.aliyun.com/repository/public" 
+  NPM_REGISTRY: "https://registry.npmmirror.com/" 
 
 # 使用Docker-in-Docker
 services:
   - docker:20.10.16-dind
+    image: docker:20.10.16-dind
+    pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
 
 cache:
   key: "$CI_COMMIT_REF_SLUG"
@@ -30,9 +35,10 @@ cache:
 backend-test:
   stage: test
   image: maven:3.8.6-openjdk-17
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   script:
     - cd backend
-    - mvn clean test
+    - mvn clean test -Dmaven.repo.local=.m2/repository -Dmirror.url=$MAVEN_MIRROR
   only:
     - feature/initial-commit
   tags:
@@ -42,9 +48,10 @@ backend-test:
 frontend-test:
   stage: test
   image: node:16-alpine
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   script:
     - cd frontend
-    - npm install
+    - npm install --registry=$NPM_REGISTRY
     - npm run test -- --watchAll=false
   only:
     - feature/initial-commit
@@ -55,6 +62,7 @@ frontend-test:
 build-backend:
   stage: build
   image: docker:20.10.16
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   script:
     - cd backend
     - docker build -t $BACKEND_IMAGE .
@@ -71,6 +79,7 @@ build-backend:
 build-frontend:
   stage: build
   image: docker:20.10.16
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   script:
     - cd frontend
     - docker build -t $FRONTEND_IMAGE .
@@ -84,6 +93,7 @@ build-frontend:
 push-images:
   stage: push
   image: docker:20.10.16
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin
     - docker push $BACKEND_IMAGE
@@ -97,6 +107,7 @@ push-images:
 deploy-production:
   stage: deploy
   image: alpine:latest
+  pull_policy: if-not-present  # 配置镜像拉取策略为if-not-present
   before_script:
     - apk add --no-cache openssh-client docker-compose
     - mkdir -p ~/.ssh
