@@ -31,29 +31,6 @@ cache:
     - backend/.m2/repository
     - frontend/node_modules/
 
-# 1. 后端代码测试（已跳过）
-backend-test:
-  stage: test
-  image: maven:3.8.6-openjdk-17
-  script:
-    - cd backend
-    - mvn clean test -Dmaven.repo.local=.m2/repository -Dmirror.url=$MAVEN_MIRROR
-  only: []  # 空数组表示不匹配任何分支，即永远不执行
-  tags:
-    - docker
-
-# 2. 前端代码测试（已跳过）
-frontend-test:
-  stage: test
-  image: node:16-alpine
-  script:
-    - cd frontend
-    - npm install --registry=$NPM_REGISTRY
-    - npm run test -- --watchAll=false
-  only: []  # 空数组表示不匹配任何分支，即永远不执行
-  tags:
-    - docker
-
 # 3. 构建后端Docker镜像
 build-backend:
   stage: build
