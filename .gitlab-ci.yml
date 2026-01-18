@@ -1,4 +1,4 @@
-# 全栈应用CI/CD流水线 - 最简化版本（跳过镜像仓库）
+# 全栈应用CI/CD流水线 - 终极简化版本（使用宿主机Docker）
 stages:
   - build
   - deploy
@@ -11,13 +11,11 @@ variables:
   # 配置国内镜像源
   MAVEN_MIRROR: "https://maven.aliyun.com/repository/public"  
   NPM_REGISTRY: "https://registry.npmmirror.com/"  
-  # 配置镜像拉取策略
-  DOCKER_PULL_POLICY: "if-not-present"
 
-# 使用Docker-in-Docker
-services:
-  - name: docker:20.10.16-dind
-    alias: docker
+# 直接使用宿主机Docker，不需要Docker-in-Docker服务
+# services:
+#   - name: docker:20.10.16-dind
+#     alias: docker
 
 cache:
   key: "$CI_COMMIT_REF_SLUG"
