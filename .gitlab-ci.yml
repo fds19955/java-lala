@@ -38,11 +38,9 @@ backend-test:
   script:
     - cd backend
     - mvn clean test -Dmaven.repo.local=.m2/repository -Dmirror.url=$MAVEN_MIRROR
-  only:
-    - feature/initial-commit
+  only: []  # 空数组表示不匹配任何分支，即永远不执行
   tags:
     - docker
-  when: never  # 设置为永远不执行
 
 # 2. 前端代码测试（已跳过）
 frontend-test:
@@ -52,11 +50,9 @@ frontend-test:
     - cd frontend
     - npm install --registry=$NPM_REGISTRY
     - npm run test -- --watchAll=false
-  only:
-    - feature/initial-commit
+  only: []  # 空数组表示不匹配任何分支，即永远不执行
   tags:
     - docker
-  when: never  # 设置为永远不执行
 
 # 3. 构建后端Docker镜像
 build-backend:
