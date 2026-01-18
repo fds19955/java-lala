@@ -183,7 +183,7 @@ deploy-production:
     - 'ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_SERVER << "EOF"'
     - '# 登录GitLab Container Registry'
     - 'echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin'
-    - ''
+    
     - '# 停止旧容器并启动新容器'
     - 'cd /home/ubuntu/'
     - 'docker-compose -f docker-compose.prod.yml down'
