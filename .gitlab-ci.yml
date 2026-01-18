@@ -1,15 +1,9 @@
-# 全栈应用CI/CD流水线 - 跳过测试阶段
+# 全栈应用CI/CD流水线 - 最简化版本（跳过镜像仓库）
 stages:
   - build
-  - push
   - deploy
 
 variables:
-  # 配置容器注册表地址
-  REGISTRY: "registry.gitlab.com/fds/java-lala"  # 替换为你的GitLab项目地址
-  BACKEND_IMAGE: "$REGISTRY/backend:$CI_COMMIT_SHORT_SHA"
-  FRONTEND_IMAGE: "$REGISTRY/frontend:$CI_COMMIT_SHORT_SHA"
-  DOCKER_HOST: "tcp://docker:2375"
   # 目标服务器信息
   DEPLOY_SERVER: "49.233.185.174"
   DEPLOY_USER: "ubuntu"
@@ -31,75 +25,10 @@ cache:
     - backend/.m2/repository
     - frontend/node_modules/
 
-# 1. 后端代码测试（已跳过）
-backend-test:
-  stage: test
-  image: maven:3.8.6-openjdk-17
-  script:
-    - cd backend
-    - mvn clean test -Dmaven.repo.local=.m2/repository -Dmirror.url=$MAVEN_MIRROR
-  only: []  # 空数组表示不匹配任何分支，即永远不执行
-  tags:
-    - docker
-
-# 2. 前端代码测试（已跳过）
-frontend-test:
-  stage: test
-  image: node:16-alpine
-  script:
-    - cd frontend
-    - npm install --registry=$NPM_REGISTRY
-    - npm run test -- --watchAll=false
-  only: []  # 空数组表示不匹配任何分支，即永远不执行
-  tags:
-    - docker
-
-# 3. 构建后端Docker镜像
-build-backend:
+# 1. 构建前后端Docker镜像并打包到目标服务器
+build-and-deploy:
   stage: build
   image: docker:20.10.16
-  script:
-    - cd backend
-    - docker build -t $BACKEND_IMAGE .
-    - docker images
-  artifacts:
-    paths:
-      - backend/target/*.jar
-  only:
-    - feature/initial-commit
-  tags:
-    - docker
-
-# 4. 构建前端Docker镜像  
-build-frontend:
-  stage: build
-  image: docker:20.10.16
-  script:
-    - cd frontend
-    - docker build -t $FRONTEND_IMAGE .
-    - docker images
-  only:
-    - feature/initial-commit
-  tags:
-    - docker
-
-# 5. 推送镜像到GitLab Container Registry
-push-images:
-  stage: push
-  image: docker:20.10.16
-  script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin
-    - docker push $BACKEND_IMAGE
-    - docker push $FRONTEND_IMAGE
-  only:
-    - feature/initial-commit
-  tags:
-    - docker
-
-# 6. 部署到目标服务器
-deploy-production:
-  stage: deploy
-  image: alpine:latest
   before_script:
     - apk add --no-cache openssh-client docker-compose
     - mkdir -p ~/.ssh
@@ -107,6 +36,20 @@ deploy-production:
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan -p $DEPLOY_PORT $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
+    # 构建后端Docker镜像
+    - cd backend
+    - docker build -t backend:$CI_COMMIT_SHORT_SHA .
+    - docker save -o backend-image.tar backend:$CI_COMMIT_SHORT_SHA
+    
+    # 构建前端Docker镜像
+    - cd ../frontend
+    - docker build -t frontend:$CI_COMMIT_SHORT_SHA .
+    - docker save -o frontend-image.tar frontend:$CI_COMMIT_SHORT_SHA
+    
+    # 将镜像文件复制到目标服务器
+    - scp -P $DEPLOY_PORT ../backend/backend-image.tar $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/
+    - scp -P $DEPLOY_PORT frontend-image.tar $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/
+    
     # 生成生产环境docker-compose文件
     - 'cat > docker-compose.prod.yml << "EOF"'
     - 'version: "3.8"'
@@ -136,7 +79,7 @@ deploy-production:
     - '      - app-network'
     - ''
     - '  backend-app:'
-    - '    image: $BACKEND_IMAGE'
+    - '    image: backend:$CI_COMMIT_SHORT_SHA'
     - '    container_name: article-backend'
     - '    restart: unless-stopped'
     - '    ports:'
@@ -153,7 +96,7 @@ deploy-production:
     - '      - app-network'
     - ''
     - '  frontend-app:'
-    - '    image: $FRONTEND_IMAGE'
+    - '    image: frontend:$CI_COMMIT_SHORT_SHA'
     - '    container_name: article-frontend'
     - '    restart: unless-stopped'
     - '    ports:'
@@ -171,19 +114,20 @@ deploy-production:
     # 将docker-compose文件复制到目标服务器
     - scp -P $DEPLOY_PORT docker-compose.prod.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/
     
-    # 在目标服务器上部署应用
+    # 在目标服务器上加载镜像并部署应用
     - 'ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_SERVER << "EOF"'
-    - '# 登录GitLab Container Registry'
-    - 'echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin'
+    - '# 加载Docker镜像'
+    - 'cd /home/ubuntu/'
+    - 'docker load -i backend-image.tar'
+    - 'docker load -i frontend-image.tar'
     - ''
     - '# 停止旧容器并启动新容器'
-    - 'cd /home/ubuntu/'
     - 'docker-compose -f docker-compose.prod.yml down'
-    - 'docker-compose -f docker-compose.prod.yml pull'
     - 'docker-compose -f docker-compose.prod.yml up -d'
     - ''
-    - '# 清理无用镜像'
+    - '# 清理无用镜像和文件'
     - 'docker image prune -f'
+    - 'rm -f backend-image.tar frontend-image.tar'
     - ''
     - '# 健康检查'
     - 'sleep 30'
