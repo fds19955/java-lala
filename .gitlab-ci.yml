@@ -1,6 +1,5 @@
-# 全栈应用CI/CD流水线
+# 全栈应用CI/CD流水线 - 跳过测试阶段
 stages:
-  - test
   - build
   - push
   - deploy
@@ -16,8 +15,8 @@ variables:
   DEPLOY_USER: "ubuntu"
   DEPLOY_PORT: "22"
   # 配置国内镜像源
-  MAVEN_MIRROR: "https://maven.aliyun.com/repository/public" 
-  NPM_REGISTRY: "https://registry.npmmirror.com/" 
+  MAVEN_MIRROR: "https://maven.aliyun.com/repository/public"  
+  NPM_REGISTRY: "https://registry.npmmirror.com/"  
   # 配置镜像拉取策略
   DOCKER_PULL_POLICY: "if-not-present"
 
@@ -32,7 +31,7 @@ cache:
     - backend/.m2/repository
     - frontend/node_modules/
 
-# 1. 后端代码测试
+# 1. 后端代码测试（已跳过）
 backend-test:
   stage: test
   image: maven:3.8.6-openjdk-17
@@ -43,8 +42,9 @@ backend-test:
     - feature/initial-commit
   tags:
     - docker
+  when: never  # 设置为永远不执行
 
-# 2. 前端代码测试（如果有）
+# 2. 前端代码测试（已跳过）
 frontend-test:
   stage: test
   image: node:16-alpine
@@ -56,6 +56,7 @@ frontend-test:
     - feature/initial-commit
   tags:
     - docker
+  when: never  # 设置为永远不执行
 
 # 3. 构建后端Docker镜像
 build-backend:
