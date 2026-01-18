@@ -2,13 +2,19 @@
 stages:
   - test
   - build
+  - push
   - deploy
 
 variables:
-  # 镜像标签使用commit hash，确保唯一性
-  BACKEND_IMAGE: "article-backend:$CI_COMMIT_SHORT_SHA"
-  FRONTEND_IMAGE: "article-frontend:$CI_COMMIT_SHORT_SHA"
+  # 使用GitLab Container Registry存储镜像
+  REGISTRY: "$CI_REGISTRY_IMAGE"
+  BACKEND_IMAGE: "$REGISTRY/backend:$CI_COMMIT_SHORT_SHA"
+  FRONTEND_IMAGE: "$REGISTRY/frontend:$CI_COMMIT_SHORT_SHA"
   DOCKER_HOST: "tcp://docker:2375"
+  # 目标服务器信息
+  DEPLOY_SERVER: "49.233.185.174"
+  DEPLOY_USER: "ubuntu"
+  DEPLOY_PORT: "22"
 
 # 使用Docker-in-Docker
 services:
@@ -29,7 +35,7 @@ backend-test:
     - cd backend
     - mvn clean test
   only:
-    - main
+    - feature/initial-commit
   tags:
     - docker
 
@@ -42,7 +48,7 @@ frontend-test:
     - npm install
     - npm run test -- --watchAll=false
   only:
-    - main
+    - feature/initial-commit
   tags:
     - docker
 
@@ -58,7 +64,7 @@ build-backend:
     paths:
       - backend/target/*.jar
   only:
-    - main
+    - feature/initial-commit
   tags:
     - docker
 
@@ -71,16 +77,33 @@ build-frontend:
     - docker build -t $FRONTEND_IMAGE .
     - docker images
   only:
-    - main
+    - feature/initial-commit
   tags:
     - docker
 
-# 5. 部署到服务器（核心步骤）
+# 5. 推送镜像到GitLab Container Registry
+push-images:
+  stage: push
+  image: docker:20.10.16
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin
+    - docker push $BACKEND_IMAGE
+    - docker push $FRONTEND_IMAGE
+  only:
+    - feature/initial-commit
+  tags:
+    - docker
+
+# 6. 部署到目标服务器
 deploy-production:
   stage: deploy
-  image: docker:20.10.16
+  image: alpine:latest
   before_script:
-    - apk add --no-cache docker-compose
+    - apk add --no-cache openssh-client docker-compose
+    - mkdir -p ~/.ssh
+    - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -p $DEPLOY_PORT $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     # 生成生产环境docker-compose文件
     - |
@@ -144,15 +167,30 @@ deploy-production:
           driver: bridge
       EOF
     
-    # 停止旧容器并启动新容器
-    - docker-compose -f docker-compose.prod.yml down
-    - docker-compose -f docker-compose.prod.yml up -d
+    # 将docker-compose文件复制到目标服务器
+    - scp -P $DEPLOY_PORT docker-compose.prod.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/
     
-    # 健康检查
-    - sleep 30
-    - docker ps
-    - echo "部署完成！应用访问地址：http://49.233.185.174"
+    # 在目标服务器上部署应用
+    - ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_SERVER << 'EOF'
+        # 登录GitLab Container Registry
+        echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin
+        
+        # 停止旧容器并启动新容器
+        cd /home/ubuntu/
+        docker-compose -f docker-compose.prod.yml down
+        docker-compose -f docker-compose.prod.yml pull
+        docker-compose -f docker-compose.prod.yml up -d
+        
+        # 清理无用镜像
+        docker image prune -f
+        
+        # 健康检查
+        sleep 30
+        docker ps
+        echo "部署完成！应用访问地址：http://49.233.185.174"
+      EOF
   only:
-    - main
+    - feature/initial-commit
   tags:
     - docker
+
