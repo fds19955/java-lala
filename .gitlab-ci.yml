@@ -16,6 +16,9 @@ deploy-to-tencent:
     - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
+    # 添加测试步骤
+    - echo "🔍 测试SSH连接..."
+    - ssh -T $DEPLOY_USER@$DEPLOY_SERVER
   script:
     - echo "🔨 正在构建项目..."
     - mvn clean package -DskipTests
