@@ -11,12 +11,22 @@ deploy-to-tencent:
   image: maven:3.9.8-eclipse-temurin-17
   before_script:
     - apt update && apt install -y openssh-client
+    - apt update && apt install -y openssh-client
     - mkdir -p ~/.ssh
     - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
+    
+    # 添加调试信息
+    - echo "🔍 检查私钥文件是否存在..."
+    - ls -la ~/.ssh/
+    - echo "🔍 检查私钥文件内容..."
+    - cat ~/.ssh/id_ed25519 | head -2  # 只显示前两行，避免泄露完整私钥
+    - echo "🔍 检查私钥权限..."
+    - stat ~/.ssh/id_ed25519
+    
     - echo "🔍 测试SSH连接..."
-    - ssh -T $DEPLOY_USER@$DEPLOY_SERVER
+    - ssh -vT $DEPLOY_USER@$DEPLOY_SERVER  # 启用 verbose 模式，查看详细的认证过程
   script:
     - echo "🔨 正在构建项目..."
     - mvn clean package -DskipTests
