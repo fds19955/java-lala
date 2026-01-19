@@ -1,21 +1,19 @@
-# 史上最简单的GitLab CI/CD配置
+# 完全避开DinD的极简CI/CD配置
 stages:
   - deploy
 
-# 直接在GitLab Runner上启动你的后端服务
+# 直接在Runner上运行你的后端服务
 deploy-backend:
   stage: deploy
-  image: docker:latest
-  services:
-    - docker:dind
+  image: eclipse-temurin:17-jre  # 用Java运行时环境，不需要Docker
   script:
     - echo "🚀 开始部署后端服务..."
-    # 1. 构建Docker镜像
-    - docker build -t my-backend .
-    # 2. 启动容器，暴露8080端口
-    - docker run -d -p 8080:8080 my-backend
-    # 3. 验证服务是否启动
+    # 直接启动你的后端服务
+    - java -jar target/app.jar --server.port=8080 &
+    # 验证服务是否启动
     - sleep 10
     - curl http://localhost:8080
+  ports:
+    - "8080:8080"  # 暴露端口，让你能访问到
   only:
     - feature/initial-commit  # 只在你的分支触发
