@@ -24,7 +24,7 @@ deploy-to-tencent:
     - scp target/$JAR_NAME $DEPLOY_USER@$DEPLOY_SERVER:/home/$DEPLOY_USER/
     
     - echo "🚀 启动后端服务..."
-    - 'ssh $DEPLOY_USER@$DEPLOY_SERVER << "EOF"'
+    - 'ssh $DEPLOY_USER@$DEPLOY_SERVER << '\''EOF'\'''
     - 'pkill -f "java -jar $JAR_NAME" || true'
     - sleep 3
     - 'cd /home/$DEPLOY_USER/'
