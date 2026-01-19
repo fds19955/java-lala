@@ -1,0 +1,39 @@
+📌 今日踩坑笔记总结
+1. GitLab SSH连接端口问题
+问题：SSH连接测试成功，但推送代码时提示Permission denied (publickey,password)
+原因：GitLab的SSH端口被设置为2224，而不是默认的22，远程仓库URL没有指定端口
+
+解决
+git remote set-url origin ssh://git@49.233.185.174:2224/fds/java-lala.git
+
+2. Git推送分支不存在问题
+问题：推送代码时提示src refspec feature/initial-commit does not match any
+原因：本地分支feature/initial-commit不存在，或者没有提交任何代码
+解决方法：先创建并切换到功能分支，添加并提交代码，再推送
+
+解决
+git checkout -b feature/initial-commit
+git add .
+git commit -m "Initial commit: 提交项目初始代码"
+git push -u origin feature/initial-commit
+
+3 总结
+配置Git全局信息：
+git config --global user.name "大帅 冯"
+git config --global user.email "1160823732@qq.com"
+git config --global push.default simple
+git config --global credential.helper cache
+git config --global credential.helper 'cache --timeout=900'
+
+创建并推送功能分支：
+git checkout -b feature/initial-commit
+git add .
+git commit -m "Initial commit: ci cd"
+git remote add origin http://49.233.185.174:8929/fds/java-lala.git
+git push -u origin feature/initial-commit
+
+# 上面如果不行-强制推送覆盖远程分支
+git push -u origin feature/initial-commit --force
+
+4 ci cd核心流程
+
