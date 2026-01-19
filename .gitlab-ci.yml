@@ -1,4 +1,4 @@
-# 完全避开DinD的极简CI/CD配置
+# 完全避开ports关键字的极简CI/CD配置
 stages:
   - deploy
 
@@ -8,12 +8,10 @@ deploy-backend:
   image: eclipse-temurin:17-jre  # 用Java运行时环境，不需要Docker
   script:
     - echo "🚀 开始部署后端服务..."
-    # 直接启动你的后端服务
-    - java -jar target/app.jar --server.port=8080 &
+    # 直接启动你的后端服务，绑定到0.0.0.0（允许外部访问）
+    - java -jar target/app.jar --server.address=0.0.0.0 --server.port=8080 &
     # 验证服务是否启动
     - sleep 10
     - curl http://localhost:8080
-  ports:
-    - "8080:8080"  # 暴露端口，让你能访问到
   only:
     - feature/initial-commit  # 只在你的分支触发
