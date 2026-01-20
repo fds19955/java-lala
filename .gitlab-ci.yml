@@ -6,7 +6,8 @@ build:
   stage: build
   image: docker:24.0.7
   services:
-    - docker:24.0.7-dind
+    - name: docker:24.0.7-dind
+      command: ["--insecure-registry=$CI_REGISTRY"]  # 直接在启动参数中配置不安全注册表
   variables:
     DOCKER_TLS_CERTDIR: "/certs"  # 启用TLS，这是Docker-in-Docker的推荐配置
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
@@ -14,9 +15,7 @@ build:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   script:
-    # 🔴 彻底修复：使用YAML块折叠符号，完全避免引号转义问题
-    - >
-      mkdir -p /etc/docker && echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
+    # 🔴 彻底修复：不需要创建daemon.json，直接在docker-dind启动参数中配置
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
