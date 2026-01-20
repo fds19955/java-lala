@@ -13,8 +13,9 @@ build:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_DRIVER: overlay2
   script:
-    # 🔴 关键修复：删除双花括号，只保留单花括号
-    - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
+    # 🔴 彻底修复：使用YAML块折叠符号，完全避免引号转义问题
+    - >
+      echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
     - systemctl restart docker || true
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY --insecure-registry
     - docker build -t $IMAGE_NAME ./backend
