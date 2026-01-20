@@ -1,0 +1,83 @@
+# 服务器配置
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  tomcat:
+    uri-encoding: UTF-8
+
+# Spring配置
+spring:
+  application:
+    name: article-system
+  
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://mysql-db:3306/article_db?useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: fds00913
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 600000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+  
+  # Thymeleaf配置
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+    cache: false
+    servlet:
+      content-type: text/html
+  
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+ # 设置账号密码
+  security:
+    user:
+      name: fds   # 自定义用户名
+      password: fds00913 # 自定义密码
+
+# MyBatis配置
+mybatis:
+  # 映射文件位置
+  mapper-locations: classpath:mapper/*.xml
+  # 实体类别名包路径（根据您的项目结构修正）
+  type-aliases-package: org.example.articlesystem.entity
+  configuration:
+    # 自动将数据库下划线命名转换为Java驼峰命名
+    map-underscore-to-camel-case: true
+    # 打印SQL语句（开发环境使用）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 自动映射行为
+    auto-mapping-behavior: full
+
+# 日志配置
+logging:
+  level:
+    # 根据您的Mapper包路径修正
+    org.example.articlesystem.mapper: trace
+    org.example.articlesystem: debug
+    org.springframework.web: info
+  file:
+    name: logs/article-system.log
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n'
+
+# 缓存配置（可选）
+spring.cache:
+  type: simple
+  cache-names: articleCache, categoryCache
+
+jwt:
+  secret: "c2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTMyLWNoYXJhY3RlcnMtbG9uZw=="
+  expiration: 86400000  # 24小时
+  header: "Authorization"

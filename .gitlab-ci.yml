@@ -1,25 +1,31 @@
-variables:
-  DEPLOY_SERVER: "49.233.185.174"
-  DEPLOY_USER: "ubuntu"
-  JAR_NAME: "app.jar"
+# .gitlab-ci.yml 修正后的配置
+stages:
+  - build
+  - deploy
 
-deploy-to-tencent:
-  stage: deploy
+build:
+  stage: build
   image: maven:3.9.8-eclipse-temurin-17
+  script:
+    - mvn clean package -DskipTests
+  artifacts:
+    paths:
+      - target/app.jar
+  only:
+    - feature/initial-commit
+
+deploy:
+  stage: deploy
+  image: ubuntu:22.04  # 改用Ubuntu镜像，和你的服务器系统一致
   before_script:
-    - apt update && apt install -y openssh-client
+    # 安装Ubuntu系统的依赖包
+    - apt update && apt install -y openssh-client docker.io docker-compose
     - mkdir -p ~/.ssh
     - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
-    - chmod +x deploy.sh  # 给部署脚本添加执行权限
   script:
-    - echo "🔨 正在构建项目..."
-    - mvn clean package -DskipTests
-    
-    - echo "📦 上传JAR包到腾讯云服务器..."
-    - scp target/$JAR_NAME $DEPLOY_USER@$DEPLOY_SERVER:/home/$DEPLOY_USER/
-    
-    - ./deploy.sh  # 执行部署脚本
+    - scp -r ./* $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --build"
   only:
     - feature/initial-commit
