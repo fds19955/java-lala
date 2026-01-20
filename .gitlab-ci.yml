@@ -14,7 +14,7 @@ build:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   script:
-    # 🔴 关键修复：先创建/etc/docker目录
+    # 🔴 关键修复：删除双花括号，只保留单花括号
     - mkdir -p /etc/docker
     - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
     # 🔴 关键修复：不需要重启docker，docker-dind服务会自动加载配置
