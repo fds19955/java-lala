@@ -4,13 +4,17 @@ stages:
 
 build:
   stage: build
-  image: maven:3.9.8-eclipse-temurin-17
+  image: docker:24.0.7
+  services:
+    - docker:24.0.7-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    # 自动使用上面配置的变量，无需手动修改
+    IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
   script:
-    - cd backend  # 必须先进入backend子目录
-    - mvn clean package -DskipTests
-  artifacts:
-    paths:
-      - backend/target/app.jar  # 注意JAR包路径变化
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $IMAGE_NAME ./backend
+    - docker push $IMAGE_NAME
   only:
     - feature/initial-commit
 
@@ -24,7 +28,8 @@ deploy:
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
-    - scp -r ./* $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --build"
+    - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY"
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit

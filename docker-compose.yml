@@ -16,9 +16,7 @@ services:
       - app-network
 
   backend-app:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: 49.233.185.174:8929/fds/java-lala:latest  # 你的GitLab镜像地址
     container_name: article-backend
     restart: unless-stopped
     ports:
