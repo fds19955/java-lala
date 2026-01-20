@@ -13,7 +13,7 @@ build:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_DRIVER: overlay2
   script:
-    # 使用单引号包裹整个JSON字符串，避免YAML解析问题
+    # 🔴 关键修复：删除双花括号，只保留单花括号
     - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
     - systemctl restart docker || true
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY --insecure-registry
