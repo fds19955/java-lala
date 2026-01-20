@@ -8,11 +8,19 @@ build:
   services:
     - docker:24.0.7-dind
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    # 自动使用上面配置的变量，无需手动修改
+    DOCKER_TLS_CERTDIR: ""  # 禁用TLS，使用HTTP连接
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
+    # 添加以下变量，允许Docker连接到HTTP Registry
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
+    # 允许不安全的Docker Registry（HTTP）
+    INSECURE_REGISTRY: "true"
   script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    # 配置Docker允许连接到HTTP Registry
+    - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
+    - systemctl restart docker || true  # 非必须，但可以确保配置生效
+    # 使用HTTP协议登录GitLab Registry
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY --insecure-registry
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
@@ -29,7 +37,7 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY"
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY --insecure-registry"
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
