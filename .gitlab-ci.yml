@@ -10,16 +10,14 @@ build:
   variables:
     DOCKER_TLS_CERTDIR: ""  # 禁用TLS，使用HTTP连接
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    # 添加以下变量，允许Docker连接到HTTP Registry
     DOCKER_HOST: tcp://docker:2375
     DOCKER_DRIVER: overlay2
-    # 允许不安全的Docker Registry（HTTP）
-    INSECURE_REGISTRY: "true"
   script:
-    # 配置Docker允许连接到HTTP Registry - 修复了YAML语法错误
-    - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
-    - systemctl restart docker || true  # 非必须，但可以确保配置生效
-    # 使用HTTP协议登录GitLab Registry
+    # 使用heredoc语法，完全避免引号问题
+    - cat > /etc/docker/daemon.json << EOF
+      { "insecure-registries": ["$CI_REGISTRY"] }
+      EOF
+    - systemctl restart docker || true
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY --insecure-registry
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
