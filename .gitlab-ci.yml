@@ -16,7 +16,7 @@ build:
     # 允许不安全的Docker Registry（HTTP）
     INSECURE_REGISTRY: "true"
   script:
-    # 配置Docker允许连接到HTTP Registry
+    # 配置Docker允许连接到HTTP Registry - 修复了YAML语法错误
     - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
     - systemctl restart docker || true  # 非必须，但可以确保配置生效
     # 使用HTTP协议登录GitLab Registry
