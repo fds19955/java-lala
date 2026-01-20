@@ -14,10 +14,9 @@ build:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   script:
-    # 🔴 关键修复：删除双花括号，只保留单花括号
-    - mkdir -p /etc/docker
-    - echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
-    # 🔴 关键修复：不需要重启docker，docker-dind服务会自动加载配置
+    # 🔴 彻底修复：使用YAML块折叠符号，完全避免引号转义问题
+    - >
+      mkdir -p /etc/docker && echo '{ "insecure-registries": ["'$CI_REGISTRY'"] }' > /etc/docker/daemon.json
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
