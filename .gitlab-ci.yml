@@ -10,7 +10,8 @@ build:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 配置Docker允许HTTP Registry（Heredoc语法，完全避免转义）
+    # 先创建Docker配置目录，再生成配置文件
+    - mkdir -p ~/.docker
     - |
       cat > ~/.docker/config.json << 'EOF'
       {"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}
@@ -36,9 +37,10 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    # 在部署服务器上配置Docker允许HTTP Registry（Heredoc语法）
+    # 在部署服务器上先创建Docker配置目录，再生成配置文件
     - |
       ssh $DEPLOY_USER@$DEPLOY_SERVER '
+      mkdir -p ~/.docker
       cat > ~/.docker/config.json << "EOF"
       {"insecure-registries": ["49.233.185.174:5000"]}
       EOF
