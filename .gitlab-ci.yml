@@ -6,13 +6,13 @@ build:
   stage: build
   image: docker:24.0.7
   variables:
-    IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
+    # 修复：使用$CI_REGISTRY_IMAGE自动生成正确的镜像名称
+    IMAGE_NAME: "$CI_REGISTRY_IMAGE:latest"
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 手动指定HTTP协议登录
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin http://49.233.185.174:8929
-    # 构建并推送镜像
+    # 修复：使用$CI_REGISTRY变量，不需要手动指定http协议
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
