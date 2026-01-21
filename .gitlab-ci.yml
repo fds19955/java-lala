@@ -7,21 +7,19 @@ build:
   image: maven:3.9.8-eclipse-temurin-17
   variables:
     MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+    # 🔴 关键：用环境变量传递不安全Registry，完全绕开daemon.json
+    DOCKER_BUILDKIT: 0
+    DOCKER_OPTS: "--insecure-registry 49.233.185.174:5000 --insecure-registry article-gitlab:5000"
   before_script:
     - apt update && apt install -y docker.io
-    - mkdir -p /etc/docker
-    # 🔴 关键：用Heredoc完全规避YAML解析问题
-    - cat > /etc/docker/daemon.json << 'EOF'
-{"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}
-EOF
-    # 🔴 关键：不用systemctl，直接重启Docker服务的正确方式
-    - service docker restart
   script:
     - cd backend
     - mvn clean package -DskipTests
+    # 🔴 关键：登录时直接指定--insecure-registry（注意位置）
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
-    - docker build -t 49.233.185.174:5000/fds/java-lala:latest .
-    - docker push 49.233.185.174:5000/fds/java-lala:latest
+    # 🔴 关键：构建和推送时添加--insecure-registry参数
+    - docker build --insecure-registry 49.233.185.174:5000 -t 49.233.185.174:5000/fds/java-lala:latest .
+    - docker push --insecure-registry 49.233.185.174:5000 49.233.185.174:5000/fds/java-lala:latest
   only:
     - feature/initial-commit
   tags:
