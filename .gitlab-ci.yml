@@ -12,11 +12,9 @@ build:
   script:
     - cd backend
     - mvn clean package -DskipTests
-    # 登录时不需要--insecure-registry参数
+    # 不需要--insecure-registry参数，因为宿主机已经配置了不安全Registry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
-    # 构建时不需要--insecure-registry参数
     - docker build -t 49.233.185.174:5000/fds/java-lala:latest .
-    # 推送时不需要--insecure-registry参数
     - docker push 49.233.185.174:5000/fds/java-lala:latest
   only:
     - feature/initial-commit
