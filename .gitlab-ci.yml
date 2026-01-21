@@ -9,11 +9,15 @@ build:
     IMAGE_NAME: "49.233.185.174:5000/fds/java-lala:latest"
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
+    # 使用环境变量配置不安全Registry
+    DOCKER_OPTS: "--insecure-registry 49.233.185.174:5000 --insecure-registry article-gitlab:5000"
   script:
-    # 直接在docker login和build命令中添加--insecure-registry参数
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000 --insecure-registry 49.233.185.174:5000
+    # 启动Docker daemon并配置不安全Registry
+    - dockerd $DOCKER_OPTS &
+    - sleep 5
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
     - docker build --add-host article-gitlab:49.233.185.174 -t $IMAGE_NAME ./backend
-    - docker push $IMAGE_NAME --insecure-registry 49.233.185.174:5000
+    - docker push $IMAGE_NAME
   only:
     - feature/initial-commit
   tags:
@@ -30,7 +34,7 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 49.233.185.174:5000 --insecure-registry 49.233.185.174:5000"
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 49.233.185.174:5000"
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
