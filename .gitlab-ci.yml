@@ -2,57 +2,49 @@ stages:
   - build
   - deploy
 
-# 构建阶段：构建Java项目并推送到GitLab Registry
+# 构建阶段：解决Docker命令未找到问题 + 适配项目结构
 build:
   stage: build
   image: maven:3.9.8-eclipse-temurin-17
   variables:
-    MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"  # 使用本地Maven仓库，加速构建
+    MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+  before_script:
+    # 关键：在Maven镜像中安装Docker客户端
+    - apt update && apt install -y docker.io
   script:
-    # 切换到backend目录（pom.xml所在的目录）
+    # 进入backend目录（pom.xml所在位置）
     - cd backend
-    
     # 构建Java项目
     - mvn clean package -DskipTests
-    
     # 登录GitLab Registry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin --insecure-registry 49.233.185.174:5000 49.233.185.174:5000
-    
-    # 构建Docker镜像（注意：此时上下文是backend目录）
+    # 构建Docker镜像（上下文为backend目录）
     - docker build -t 49.233.185.174:5000/fds/java-lala:latest .
-    
     # 推送Docker镜像到Registry
     - docker push --insecure-registry 49.233.185.174:5000 49.233.185.174:5000/fds/java-lala:latest
   only:
-    - feature/initial-commit  # 仅在main分支推送时触发
+    - feature/initial-commit  # 仅在该分支触发
   tags:
     - docker
   cache:
     paths:
-      - .m2/repository/  # 缓存Maven依赖，加速构建
+      - .m2/repository/
 
-# 部署阶段：在服务器上部署MySQL和后端应用
+# 部署阶段：保持原配置不变
 deploy:
   stage: deploy
   image: ubuntu:22.04
   before_script:
-    # 安装必要工具
     - apt update && apt install -y docker.io docker-compose openssh-client
-    # 配置SSH连接
     - mkdir -p ~/.ssh
     - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan 49.233.185.174 >> ~/.ssh/known_hosts
   script:
-    # 创建部署目录
     - ssh root@49.233.185.174 "mkdir -p /home/ubuntu/article-fds"
-    
-    # 复制docker-compose.yml到服务器
     - scp docker-compose.yml root@49.233.185.174:/home/ubuntu/article-fds/
-    
-    # 在服务器上部署服务
     - ssh root@49.233.185.174 "cd /home/ubuntu/article-fds && docker-compose up -d"
   only:
-    - feature/initial-commit  # 仅在main分支推送时触发
+    - feature/initial-commit  # 仅在该分支触发
   tags:
     - docker
