@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   mysql-db:
     image: mysql:8.0
@@ -10,8 +12,8 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - ./mysql/data:/var/lib/mysql
-      - ./mysql/init:/docker-entrypoint-initdb.d
+      - mysql-data:/var/lib/mysql  # 使用命名卷持久化数据
+      - ./mysql/init:/docker-entrypoint-initdb.d  # 初始化脚本目录（如果有的话）
     networks:
       - app-network
     healthcheck:
@@ -20,7 +22,7 @@ services:
       retries: 10
 
   backend-app:
-    image: 49.233.185.174:8929/fds/java-lala:latest  # 你的GitLab镜像地址
+    image: 49.233.185.174:5000/fds/java-lala:latest  # 从GitLab Registry拉取镜像
     container_name: article-backend
     restart: unless-stopped
     ports:
@@ -30,6 +32,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/article_db?useSSL=false&serverTimezone=Asia/Shanghai
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: fds00913
+      SPRING_REDIS_HOST: article-redis  # 连接服务器上的Redis
+      SPRING_REDIS_PORT: 6379
     depends_on:
       mysql-db:
         condition: service_healthy  # 等待MySQL健康检查通过后再启动
@@ -40,6 +44,11 @@ services:
       timeout: 10s
       retries: 5
 
+# 命名卷，用于持久化MySQL数据
+volumes:
+  mysql-data:
+
 networks:
   app-network:
     driver: bridge
+    external: false
