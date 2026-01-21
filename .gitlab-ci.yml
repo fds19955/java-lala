@@ -7,15 +7,17 @@ build:
   image: docker:24.0.7
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
+    DOCKER_HOST: tcp://docker:2375  # 使用非TLS端口
+    DOCKER_TLS_CERTDIR: ""  # 禁用TLS
   script:
-    # 直接使用宿主机Docker，无需TLS配置
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    # 使用--password-stdin更安全
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
     - feature/initial-commit
   tags:
-    - docker  # 指定使用我们注册的Runner
+    - docker
 
 deploy:
   stage: deploy
@@ -28,9 +30,9 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY"
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY'"
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
   tags:
-    - docker  # 指定使用我们注册的Runner
+    - docker
