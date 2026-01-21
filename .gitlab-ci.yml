@@ -11,7 +11,7 @@ build:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 先创建Docker目录，再创建daemon.json文件
+    # 先创建Docker目录，再创建daemon.json文件1
     - mkdir -p /etc/docker
     - |
       cat > /etc/docker/daemon.json << 'EOF'
