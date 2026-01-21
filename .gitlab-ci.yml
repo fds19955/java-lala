@@ -4,20 +4,21 @@ stages:
 
 build:
   stage: build
-  image: gcr.io/kaniko-project/executor:v1.22.0-debug  # 使用带调试工具的Kaniko镜像
+  image: docker:24.0.7  # 使用Docker官方镜像
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
+    DOCKER_HOST: unix:///var/run/docker.sock  # 直接使用宿主机Docker
   script:
-    # 配置Kaniko认证（无需下载，直接使用内置的kaniko-executor）
-    - mkdir -p /kaniko/.docker
-    - echo '{"auths":{"'"$CI_REGISTRY"'":{"username":"'"$CI_REGISTRY_USER"'","password":"'"$CI_REGISTRY_PASSWORD"'"}}}' > /kaniko/.docker/config.json
-
-    # 使用Kaniko构建并推送镜像
-    - /kaniko/executor --context ./backend --dockerfile ./backend/Dockerfile --destination $IMAGE_NAME --insecure-registry $CI_REGISTRY
+    # 配置Docker登录
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # 构建并推送镜像
+    - docker build -t $IMAGE_NAME ./backend
+    - docker push $IMAGE_NAME
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - docker  # 确保使用正确的Runner标签
+  privileged: true  # 需要特权模式访问宿主机Docker
 
 deploy:
   stage: deploy
