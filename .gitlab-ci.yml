@@ -10,13 +10,13 @@ build:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 配置Docker客户端允许HTTP Registry（修复YAML转义问题）
-    - mkdir -p ~/.docker
-    - echo '{"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}' > ~/.docker/config.json
-    
+    # 配置Docker允许HTTP Registry（Heredoc语法，完全避免转义）
+    - |
+      cat > ~/.docker/config.json << 'EOF'
+      {"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}
+      EOF
     # Docker登录
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
-    
     # 构建并推送镜像
     - docker build --add-host article-gitlab:49.233.185.174 -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
@@ -36,13 +36,16 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    
-    # 在部署服务器上配置Docker允许HTTP Registry（修复YAML转义问题）
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "mkdir -p ~/.docker && echo '{\"insecure-registries\": [\"49.233.185.174:5000\"]}' > ~/.docker/config.json"
-    
+    # 在部署服务器上配置Docker允许HTTP Registry（Heredoc语法）
+    - |
+      ssh $DEPLOY_USER@$DEPLOY_SERVER '
+      cat > ~/.docker/config.json << "EOF"
+      {"insecure-registries": ["49.233.185.174:5000"]}
+      EOF
+      '
     # Docker登录
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 49.233.185.174:5000"
-    
+    # 启动服务
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
