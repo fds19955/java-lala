@@ -10,10 +10,11 @@ build:
   before_script:
     - apt update && apt install -y docker.io
     - mkdir -p /etc/docker
-    # 🔴 关键：用|多行字符串完全规避YAML解析问题
-    - echo '
+    # 🔴 关键：用Heredoc完全规避YAML解析问题
+    - cat > /etc/docker/daemon.json << 'EOF'
 {"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}
-' > /etc/docker/daemon.json
+EOF
+    # 🔴 关键：不用systemctl，直接重启Docker服务的正确方式
     - service docker restart
   script:
     - cd backend
