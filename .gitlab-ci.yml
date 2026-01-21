@@ -6,10 +6,14 @@ build:
   stage: build
   image: docker:24.0.7
   variables:
+    # 使用HTTP协议访问Registry
     IMAGE_NAME: "49.233.185.174:5000/fds/java-lala:latest"
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
+    # 添加不安全Registry
+    - echo '{"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}' > /etc/docker/daemon.json
+    - systemctl restart docker || true  # 重启Docker服务
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin http://49.233.185.174:5000
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
