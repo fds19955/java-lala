@@ -6,14 +6,19 @@ stages:
 build:
   stage: build
   image: maven:3.9.8-eclipse-temurin-17
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"  # 使用本地Maven仓库，加速构建
   script:
+    # 切换到backend目录（pom.xml所在的目录）
+    - cd backend
+    
     # 构建Java项目
     - mvn clean package -DskipTests
     
     # 登录GitLab Registry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin --insecure-registry 49.233.185.174:5000 49.233.185.174:5000
     
-    # 构建Docker镜像
+    # 构建Docker镜像（注意：此时上下文是backend目录）
     - docker build -t 49.233.185.174:5000/fds/java-lala:latest .
     
     # 推送Docker镜像到Registry
@@ -22,6 +27,9 @@ build:
     - feature/initial-commit  # 仅在main分支推送时触发
   tags:
     - docker
+  cache:
+    paths:
+      - .m2/repository/  # 缓存Maven依赖，加速构建
 
 # 部署阶段：在服务器上部署MySQL和后端应用
 deploy:
@@ -48,4 +56,3 @@ deploy:
     - feature/initial-commit  # 仅在main分支推送时触发
   tags:
     - docker
-
