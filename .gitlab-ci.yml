@@ -4,19 +4,21 @@ stages:
 
 build:
   stage: build
-  image: docker:24.0.7
-  services:
-    - name: docker:24.0.7-dind
-      command: ["--insecure-registry=49.233.185.174:8929"]
+  image: ubuntu:22.04  # 使用Ubuntu基础镜像，避免Docker-in-Docker问题
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    DOCKER_HOST: tcp://docker:2375  # 使用非TLS端口
-    DOCKER_TLS_CERTDIR: ""  # 禁用TLS
+    KANIKO_VERSION: "v1.22.0"
   script:
-    # 使用--password-stdin更安全
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker build -t $IMAGE_NAME ./backend
-    - docker push $IMAGE_NAME
+    # 下载Kaniko执行器
+    - wget -O kaniko-executor "https://github.com/GoogleContainerTools/kaniko/releases/download/$KANIKO_VERSION/kaniko-executor" 
+    - chmod +x kaniko-executor
+
+    # 配置Kaniko认证
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+
+    # 使用Kaniko构建并推送镜像（无需Docker守护进程）
+    - ./kaniko-executor --context ./backend --dockerfile ./backend/Dockerfile --destination $IMAGE_NAME --insecure-registry $CI_REGISTRY
   only:
     - feature/initial-commit
   tags:
