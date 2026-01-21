@@ -6,13 +6,14 @@ build:
   stage: build
   image: docker:24.0.7
   variables:
-    # 修复：使用$CI_REGISTRY_IMAGE自动生成正确的镜像名称
-    IMAGE_NAME: "$CI_REGISTRY_IMAGE:latest"
+    # 修复：手动指定正确的镜像名称
+    IMAGE_NAME: "49.233.185.174:8929/fds/java-lala:latest"
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 修复：使用$CI_REGISTRY变量，不需要手动指定http协议
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+    # 手动指定HTTP协议登录
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin http://49.233.185.174:8929
+    # 构建并推送镜像
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
@@ -31,7 +32,7 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY'"
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 'http://49.233.185.174:8929'"
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
