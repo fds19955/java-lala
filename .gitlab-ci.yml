@@ -20,7 +20,7 @@ build:
   only:
     - feature/initial-commit
   tags:
-    - article-backend-runner
+    - docker
 
 deploy:
   stage: deploy
@@ -38,4 +38,4 @@ deploy:
   only:
     - feature/initial-commit
   tags:
-    - article-backend-runner
+    - docker
