@@ -12,9 +12,10 @@ build:
     # 使用环境变量配置不安全Registry
     DOCKER_OPTS: "--insecure-registry 49.233.185.174:5000 --insecure-registry article-gitlab:5000"
   script:
+  # 添加Docker配置，允许HTTP Registry
+    - mkdir -p ~/.docker
+    - echo '{"insecure-registries": ["49.233.185.174:5000"]}' > ~/.docker/config.json
     # 启动Docker daemon并配置不安全Registry
-    - dockerd $DOCKER_OPTS &
-    - sleep 5
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
     - docker build --add-host article-gitlab:49.233.185.174 -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
