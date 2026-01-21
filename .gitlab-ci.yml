@@ -11,8 +11,10 @@ build:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    # 修复YAML语法错误：使用单引号包裹JSON字符串，避免双花括号被YAML解析
-    - echo '{"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}' > /etc/docker/daemon.json
+    # 使用Heredoc语法避免引号转义问题
+    - cat > /etc/docker/daemon.json << 'EOF'
+      {"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}
+      EOF
     - systemctl restart docker || true  # 重启Docker服务
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin http://49.233.185.174:5000
     - docker build -t $IMAGE_NAME ./backend
