@@ -7,9 +7,10 @@ build:
   image: docker:24.0.7
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    # 纯Socket挂载，无需TLS或特权模式
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
+    # 添加以下环境变量
+    DOCKER_OPTS: "--insecure-registry 49.233.185.174:8929"
   script:
     # 使用--password-stdin安全登录
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
