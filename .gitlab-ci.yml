@@ -5,7 +5,7 @@ stages:
 # 构建阶段：构建Java项目并推送到GitLab Registry
 build:
   stage: build
-  image: maven:3.8.6-openjdk-17
+  image: maven:3.9.8-eclipse-temurin-17
   script:
     # 构建Java项目
     - mvn clean package -DskipTests
