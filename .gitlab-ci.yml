@@ -15,7 +15,7 @@ build:
   only:
     - feature/initial-commit
   tags:
-    - article-backend-runner  # 指定使用我们注册的Runner
+    - docker  # 指定使用我们注册的Runner
 
 deploy:
   stage: deploy
@@ -33,4 +33,4 @@ deploy:
   only:
     - feature/initial-commit
   tags:
-    - article-backend-runner  # 指定使用我们注册的Runner
+    - docker  # 指定使用我们注册的Runner
