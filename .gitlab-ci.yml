@@ -4,28 +4,20 @@ stages:
 
 build:
   stage: build
-  image: ubuntu:22.04
+  image: gcr.io/kaniko-project/executor:v1.22.0-debug  # 使用带调试工具的Kaniko镜像
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    KANIKO_VERSION: "v1.22.0"
-  before_script:
-    # 安装必要工具
-    - apt update && apt install -y wget ca-certificates
   script:
-    # 下载Kaniko执行器
-    - wget -O kaniko-executor "https://github.com/GoogleContainerTools/kaniko/releases/download/$KANIKO_VERSION/kaniko-executor" 
-    - chmod +x kaniko-executor
-
-    # 配置Kaniko认证（注意使用单引号避免JSON转义问题）
+    # 配置Kaniko认证（无需下载，直接使用内置的kaniko-executor）
     - mkdir -p /kaniko/.docker
     - echo '{"auths":{"'"$CI_REGISTRY"'":{"username":"'"$CI_REGISTRY_USER"'","password":"'"$CI_REGISTRY_PASSWORD"'"}}}' > /kaniko/.docker/config.json
 
     # 使用Kaniko构建并推送镜像
-    - ./kaniko-executor --context ./backend --dockerfile ./backend/Dockerfile --destination $IMAGE_NAME --insecure-registry $CI_REGISTRY
+    - /kaniko/executor --context ./backend --dockerfile ./backend/Dockerfile --destination $IMAGE_NAME --insecure-registry $CI_REGISTRY
   only:
     - feature/initial-commit
   tags:
-    - docker  # 确保使用正确的Runner标签
+    - docker
 
 deploy:
   stage: deploy
@@ -43,4 +35,4 @@ deploy:
   only:
     - feature/initial-commit
   tags:
-    - docker  # 确保使用正确的Runner标签
+    - docker
