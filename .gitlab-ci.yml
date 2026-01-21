@@ -5,6 +5,9 @@ stages:
 build:
   stage: build
   image: docker:24.0.7
+  services:
+    - name: docker:24.0.7-dind
+      command: ["--insecure-registry=49.233.185.174:8929"]
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
     DOCKER_HOST: tcp://docker:2375  # 使用非TLS端口
@@ -17,7 +20,7 @@ build:
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - article-backend-runner
 
 deploy:
   stage: deploy
@@ -35,4 +38,4 @@ deploy:
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - article-backend-runner
