@@ -5,22 +5,17 @@ stages:
 build:
   stage: build
   image: docker:24.0.7
-  services:
-    - name: docker:24.0.7-dind
-      command: ["--insecure-registry=$CI_REGISTRY"]  # 直接在启动参数中配置不安全注册表
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"  # 启用TLS，这是Docker-in-Docker的推荐配置
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   script:
-    # 🔴 彻底修复：不需要创建daemon.json，直接在docker-dind启动参数中配置
+    # 直接使用宿主机Docker，无需TLS配置
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker build -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
     - feature/initial-commit
+  tags:
+    - article-backend-runner  # 指定使用我们注册的Runner
 
 deploy:
   stage: deploy
@@ -37,3 +32,5 @@ deploy:
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
+  tags:
+    - article-backend-runner  # 指定使用我们注册的Runner
