@@ -4,12 +4,14 @@ stages:
 
 build:
   stage: build
-  image: docker:24.0.7  # 使用Docker官方镜像
+  image: docker:24.0.7
   variables:
     IMAGE_NAME: "$CI_REGISTRY/fds/java-lala:latest"
-    DOCKER_HOST: unix:///var/run/docker.sock  # 直接使用宿主机Docker
+    # 纯Socket挂载，无需TLS或特权模式
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_TLS_CERTDIR: ""
   script:
-    # 配置Docker登录
+    # 使用--password-stdin安全登录
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     # 构建并推送镜像
     - docker build -t $IMAGE_NAME ./backend
@@ -17,8 +19,7 @@ build:
   only:
     - feature/initial-commit
   tags:
-    - docker  # 确保使用正确的Runner标签
-  privileged: true  # 需要特权模式访问宿主机Docker
+    - docker
 
 deploy:
   stage: deploy
