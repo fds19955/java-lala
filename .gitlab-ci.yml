@@ -9,14 +9,15 @@ build:
     IMAGE_NAME: "49.233.185.174:5000/fds/java-lala:latest"
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
-    # 使用环境变量配置不安全Registry
-    DOCKER_OPTS: "--insecure-registry 49.233.185.174:5000 --insecure-registry article-gitlab:5000"
   script:
-  # 添加Docker配置，允许HTTP Registry
+    # 配置Docker客户端允许HTTP Registry
     - mkdir -p ~/.docker
-    - echo '{"insecure-registries": ["49.233.185.174:5000"]}' > ~/.docker/config.json
-    # 启动Docker daemon并配置不安全Registry
+    - echo '{"insecure-registries": ["49.233.185.174:5000", "article-gitlab:5000"]}' > ~/.docker/config.json
+    
+    # Docker登录（无需--insecure-registry参数，已通过配置文件设置）
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
+    
+    # 构建并推送镜像
     - docker build --add-host article-gitlab:49.233.185.174 -t $IMAGE_NAME ./backend
     - docker push $IMAGE_NAME
   only:
@@ -35,7 +36,13 @@ deploy:
     - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
   script:
     - scp docker-compose.yml $DEPLOY_USER@$DEPLOY_SERVER:/home/ubuntu/article-fds/
-    - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 49.233.185.174:5000"
+    
+    # 在部署服务器上配置Docker允许HTTP Registry
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "mkdir -p ~/.docker && echo '{\"insecure-registries\": [\"49.233.185.174:5000\"]}' > ~/.docker/config.json"
+    
+    # Docker登录（已配置允许HTTP）
+    - ssh $DEPLOY_USER@$DEPLOY_SERVER "echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin 49.233.185.174:5000"
+    
     - ssh $DEPLOY_USER@$DEPLOY_SERVER "cd /home/ubuntu/article-fds && docker compose up -d --pull always"
   only:
     - feature/initial-commit
