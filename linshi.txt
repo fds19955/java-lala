@@ -1,0 +1,36 @@
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:16.11.8-ce.0
+    container_name: article-gitlab
+    hostname: '49.233.185.174'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://49.233.185.174:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2224
+        
+        # Registry配置（简化！）
+        registry_external_url 'http://49.233.185.174:5000'
+        registry['enable'] = true
+        
+        # 性能优化
+        puma['worker_processes'] = 4
+        sidekiq['max_concurrency'] = 8
+    restart: unless-stopped
+    ports:
+      - "8929:8929"
+      - "2224:22"
+      - "5000:5000"
+    volumes:
+      - /home/ubuntu/gitlab/config:/etc/gitlab
+      - /home/ubuntu/gitlab/logs:/var/log/gitlab
+      - /home/ubuntu/gitlab/data:/var/opt/gitlab
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: article-gitlab-runner
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/runner/config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gitlab
