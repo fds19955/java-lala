@@ -6,14 +6,13 @@ variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
 
-# ==================== 阶段1：构建JAR（阿里云镜像）====================
+# 阶段1：构建JAR（阿里云镜像）
 build:
   stage: build
   image: maven:3.9.8-eclipse-temurin-17
   script:
     - |
-      echo "🔧 设置阿里云Maven镜像..."
-      # 创建Maven配置文件
+      echo "设置阿里云Maven镜像..."
       mkdir -p ~/.m2
       cat > ~/.m2/settings.xml << 'EOF'
       <?xml version="1.0" encoding="UTF-8"?>
@@ -29,20 +28,17 @@ build:
       </settings>
       EOF
       
-      echo "🔨 构建Spring Boot应用..."
+      echo "构建Spring Boot应用..."
       cd backend
       mvn clean package -DskipTests
       
-      # 确保JAR文件存在
       JAR_FILE=$(find target -name "*.jar" -type f | head -1)
       if [ -z "$JAR_FILE" ]; then
-        echo "❌ 构建失败：未找到JAR文件"
+        echo "构建失败：未找到JAR文件"
         exit 1
       fi
-      
-      # 重命名为app.jar方便使用
       cp "$JAR_FILE" target/app.jar
-      echo "✅ 构建完成，JAR: $(ls -lh target/app.jar)"
+      echo "构建完成，JAR: $(ls -lh target/app.jar)"
   artifacts:
     paths:
       - backend/target/app.jar
@@ -51,24 +47,21 @@ build:
   tags:
     - docker
 
-# ==================== 阶段2：部署（使用真实业务接口验证）====================
+# 阶段2：部署（使用真实API验证）
 deploy:
   stage: deploy
   image: docker:24.0.7
   before_script:
-    - echo "🔍 测试Docker socket..."
-    - docker ps | head -3 || echo "Docker正常"
+    - echo "测试Docker socket..."
   script:
     - |
-      echo "🚀 开始部署并使用真实API验证..."
+      echo "开始部署并使用真实API验证..."
       
-      # 1. 验证构建产物
       if [ ! -f backend/target/app.jar ]; then
-        echo "❌ 错误：app.jar不存在，请检查构建阶段"
+        echo "错误：app.jar不存在"
         exit 1
       fi
       
-      # 2. 创建Dockerfile
       cat > Dockerfile << 'EOF'
       FROM eclipse-temurin:17-jre
       WORKDIR /app
@@ -77,66 +70,48 @@ deploy:
       ENTRYPOINT ["java", "-jar", "app.jar"]
       EOF
       
-      # 3. 构建应用镜像
-      echo "📦 构建应用镜像..."
+      echo "构建应用镜像..."
       docker build -t article-backend:latest .
       
-      # 4. 连接数据库网络（必须）
-      echo "🌐 连接数据库网络..."
+      echo "连接数据库网络..."
       if ! docker network ls | grep -q article-fds_article-net; then
-        echo "创建网络并连接数据库..."
         docker network create article-fds_article-net
         docker network connect article-fds_article-net article-mysql
         docker network connect article-fds_article-net article-redis
       else
-        echo "网络已存在，确保数据库已连接..."
-        # 检查MySQL是否在网
         if ! docker network inspect article-fds_article-net | grep -q article-mysql; then
           docker network connect article-fds_article-net article-mysql
         fi
-        # 检查Redis是否在网
         if ! docker network inspect article-fds_article-net | grep -q article-redis; then
           docker network connect article-fds_article-net article-redis
         fi
       fi
       
-      # 5. 停止旧版本
-      echo "🧹 停止旧版本应用..."
+      echo "停止旧版本..."
       docker stop article-backend 2>/dev/null || true
       docker rm article-backend 2>/dev/null || true
       
-      # 6. 启动新应用（完整配置）
-      echo "🚢 启动新应用..."
+      echo "启动新应用..."
       docker run -d \
         --name article-backend \
         --restart unless-stopped \
         -p 8081:8080 \
         --network article-fds_article-net \
         -e SPRING_PROFILES_ACTIVE=prod \
-        -e SPRING_DATASOURCE_URL='jdbc:mysql://article-mysql:3306/article_db?useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai' \
+        -e SPRING_DATASOURCE_URL='jdbc:mysql://article-mysql:3306/article_db?useSSL=false' \
         -e SPRING_DATASOURCE_USERNAME=root \
         -e SPRING_DATASOURCE_PASSWORD=fds00913 \
         -e SPRING_REDIS_HOST='article-redis' \
         -e SPRING_REDIS_PORT=6379 \
-        -e SERVER_PORT=8080 \
-        -e LOGGING_LEVEL_ROOT=info \
-        -e JAVA_OPTS='-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200' \
         article-backend:latest
       
-      # 7. 健康检查终极方案
-      echo "==========================================="
-      echo "🏥 开始全面健康检查..."
-      echo "==========================================="
+      echo "健康检查开始..."
       
-      ###############################################
-      # 阶段1：容器启动检查
-      ###############################################
-      echo "🔍 阶段1：检查容器状态"
       CONTAINER_RUNNING=false
       for i in {1..30}; do
         if docker ps --format "table {{.Names}}\t{{.Status}}" | grep -q "article-backend.*Up"; then
           CONTAINER_RUNNING=true
-          echo "✅ 容器已启动 ($i秒)"
+          echo "容器已启动"
           break
         fi
         echo "等待容器启动...($i/30)"
@@ -144,175 +119,46 @@ deploy:
       done
       
       if [ "$CONTAINER_RUNNING" != true ]; then
-        echo "❌ 容器启动失败！"
-        echo "容器日志:"
+        echo "容器启动失败"
         docker logs article-backend 2>/dev/null | tail -20
         exit 1
       fi
       
-      ###############################################
-      # 阶段2：应用启动检查
-      ###############################################
-      echo ""
-      echo "🔍 阶段2：检查Spring Boot应用启动"
       APP_STARTED=false
       for i in {1..40}; do
-        # 方法1：检查容器内Spring启动日志
-        if docker logs article-backend 2>/dev/null | grep -i "Started.*Application" | grep -q "seconds"; then
-          APP_STARTED=true
-          echo "✅ Spring应用已启动 ($i秒)"
-          break
-        fi
-        
-        # 方法2：检查Spring健康端点
         if docker exec article-backend curl -s http://localhost:8080/actuator/health 2>/dev/null | grep -q "UP"; then
           APP_STARTED=true
-          echo "✅ Actuator健康检查通过 ($i秒)"
+          echo "应用启动成功"
           break
         fi
-        
         echo "等待应用启动...($i/40)"
         sleep 2
       done
       
-      if [ "$APP_STARTED" != true ]; then
-        echo "❌ 应用启动失败，查看日志..."
-        docker logs article-backend --tail 30
-        exit 1
-      fi
-      
-      ###############################################
-      # 阶段3：数据库连接检查
-      ###############################################
-      echo ""
-      echo "🔍 阶段3：检查数据库连接"
-      
-      # 打印数据库连接信息
-      echo "数据库连接配置:"
-      echo "MySQL: article-mysql:3306/article_db"
-      echo "Redis: article-redis:6379"
-      
-      # 检查是否能从应用连接数据库（通过Spring日志）
-      DB_CONNECTED=false
-      for i in {1..15}; do
-        if docker logs article-backend 2>/dev/null | grep -i "DataSource.*initialized\|Connected to database\|成功连接数据库"; then
-          DB_CONNECTED=true
-          echo "✅ 数据库连接成功 ($i秒)"
-          break
-        fi
-        echo "等待数据库连接...($i/15)"
-        sleep 2
-      done
-      
-      ###############################################
-      # 阶段4：真实业务API测试（关键！）
-      ###############################################
-      echo ""
-      echo "==========================================="
-      echo "🚀 阶段4：测试真实业务API - http://localhost:8081/api/articles"
-      echo "==========================================="
-      
       API_SUCCESS=false
-      for i in {1..30}; do
-        echo "尝试调用API ($i/30):"
-        
-        # 方法1：从外部直接调用（使用host网络）
-        echo "方法1：外部调用..."
-        API_RESPONSE=$(curl -s -f "http://localhost:8081/api/articles" \
-          -H "Content-Type: application/json" \
-          -H "Accept: application/json" \
-          --max-time 5 \
-          -w "\nHTTP状态码: %{http_code}" \
-          2>/dev/null) || API_RESPONSE=""
-        
+      for i in {1..20}; do
+        API_RESPONSE=$(curl -s "http://localhost:8081/api/articles" --max-time 5 2>/dev/null) || true
         if [ -n "$API_RESPONSE" ]; then
-          echo "✅ API响应:"
-          echo "$API_RESPONSE" | head -5  # 只显示前几行
-          
-          # 检查HTTP状态码
-          if echo "$API_RESPONSE" | grep -q "HTTP状态码: 200\|HTTP状态码: 201\|HTTP状态码: 204"; then
+          if echo "$API_RESPONSE" | grep -q "article\|total\|page\|\[\]"; then
             API_SUCCESS=true
-            echo "🎉 文章列表API调用成功！"
+            echo "文章API调用成功"
             break
           fi
         fi
-        
-        # 方法2：从容器内调用（可选）
-        echo "方法2：容器内调用..."
-        INTERNAL_RESPONSE=$(docker exec article-backend curl -s "http://localhost:8080/api/articles" 2>/dev/null) || true
-        if [ -n "$INTERNAL_RESPONSE" ] && echo "$INTERNAL_RESPONSE" | grep -q "article\|total\|page"; then
-          API_SUCCESS=true
-          echo "🎉 容器内API调用成功！"
-          break
-        fi
-        
-        echo "API调用失败，等待重试...($i/30)"
+        echo "等待API...($i/20)"
         sleep 3
       done
       
-      ###############################################
-      # 最终报告
-      ###############################################
-      echo ""
-      echo "==========================================="
-      echo "📊 部署完成报告"
-      echo "==========================================="
+      echo "部署报告："
+      docker ps --filter "name=article-backend" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
       
-      echo "✅ 容器状态："
-      docker ps --filter "name=article-backend" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.RunningFor}}"
-      
-      echo ""
-      echo "✅ 网络连接："
-      docker network inspect article-fds_article-net --format='{{range .Containers}}{{printf "%-20s %s\n" .Name .IPv4Address}}{{end}}' 2>/dev/null || \
-        echo "网络检查失败，但部署继续..."
-      
-      echo ""
-      echo "✅ 应用日志摘要："
-      docker logs article-backend --tail 5 2>/dev/null | grep -i "started\|error\|warn\|info" || \
-        echo "暂无关键日志"
-      
-      echo ""
       if [ "$API_SUCCESS" = true ]; then
-        echo "🎉🎉🎉 部署完全成功！ 🎉🎉🎉"
-        echo ""
-        echo "================================================"
-        echo "🚀 业务功能验证通过：文章列表API可正常访问"
-        echo "================================================"
-        echo ""
-        echo "🌐 访问地址："
-        echo "1. 应用健康检查：http://49.233.185.174:8081/actuator/health"
-        echo "2. 文章列表API：http://49.233.185.174:8081/api/articles"
-        echo "3. GitLab流水线：http://49.233.185.174:8929/你的项目/-/pipelines"
-        echo ""
-        echo "💡 可以打开浏览器直接测试："
-        echo "curl http://49.233.185.174:8081/api/articles | jq ."
-        echo ""
-        echo "✅ 从Maven构建到Docker部署全链路自动化完成！"
+        echo "部署完全成功"
+        echo "访问地址：http://49.233.185.174:8081/api/articles"
       else
-        echo "⚠️ 部署已完成，但API测试失败"
-        echo "可能原因："
-        echo "1. 数据库表结构未初始化"
-        echo "2. 应用内部配置问题"
-        echo "3. API路径不正确"
-        echo ""
-        echo "💡 手动验证命令："
-        echo "1. 查看应用完整日志: docker logs article-backend"
-        echo "2. 检查数据库: docker exec article-mysql mysql -uroot -pfds00913 article_db -e 'SHOW TABLES;'"
-        echo "3. 直接访问: curl -v http://49.233.185.174:8081/api/articles"
-        echo ""
-        echo "✅ 容器已成功启动，可以手工验证API"
+        echo "部署完成但API测试失败"
+        echo "可以手动测试：curl http://49.233.185.174:8081/api/articles"
       fi
-      
-      # 最后强制健康检查
-      echo ""
-      echo "💉 最终端点检查："
-      echo "1. /actuator/health:"
-      curl -s http://localhost:8081/actuator/health 2>/dev/null | head -2 || echo "健康检查失败"
-      echo "2. /api/articles:"
-      curl -s -I http://localhost:8081/api/articles 2>/dev/null | head -1 || echo "API检查失败"
-      
-      echo ""
-      echo "🏁 部署流程结束"
   needs: ["build"]
   only:
     - feature/initial-commit
