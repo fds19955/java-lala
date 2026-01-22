@@ -1,43 +1,174 @@
+# .gitlab-ci.yml（跳过Registry，直接构建部署）
 stages:
   - build
   - deploy
 
+variables:
+  # 关键：不用Registry，直接从本地构建镜像
+  # 这样就不需要Registry登录了！
+  DOCKER_HOST: "unix:///var/run/docker.sock"
+  DOCKER_TLS_CERTDIR: ""
+
+# ==================== 阶段1：构建JAR ====================
 build:
   stage: build
   image: maven:3.9.8-eclipse-temurin-17
-  variables:
-    MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
-  before_script:
-    - apt update && apt install -y docker.io
   script:
+    - echo "🔨 构建JAR包..."
     - cd backend
     - mvn clean package -DskipTests
-    # 不需要--insecure-registry参数，因为宿主机已经配置了不安全Registry
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin 49.233.185.174:5000
-    - docker build -t 49.233.185.174:5000/fds/java-lala:latest .
-    - docker push 49.233.185.174:5000/fds/java-lala:latest
+    
+    # 确保JAR文件名固定
+    - ls -lh target/
+    - mv target/*.jar target/app.jar
+    
+    echo "✅ JAR构建完成"
+  artifacts:
+    paths:
+      - backend/target/app.jar
   only:
     - feature/initial-commit
+    - main
   tags:
     - docker
-  cache:
-    paths:
-      - .m2/repository/
 
+# ==================== 阶段2：直接部署（跳过Registry）====================
 deploy:
   stage: deploy
-  image: ubuntu:22.04
+  image: docker:24.0.7  # Docker官方镜像
   before_script:
-    - apt update && apt install -y docker.io docker-compose openssh-client
-    - mkdir -p ~/.ssh
-    - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
-    - chmod 600 ~/.ssh/id_ed25519
-    - ssh-keyscan 49.233.185.174 >> ~/.ssh/known_hosts
+    - echo "测试Docker socket..."
+    - docker ps | head -3 || echo "Docker socket测试"
   script:
-    - ssh root@49.233.185.174 "mkdir -p /home/ubuntu/article-fds"
-    - scp docker-compose.yml root@49.233.185.174:/home/ubuntu/article-fds/
-    - ssh root@49.233.185.174 "cd /home/ubuntu/article-fds && docker-compose up -d"
+    - |
+      echo "🚀 开始部署（跳过Registry）..."
+      
+      # 1. 准备构建目录
+      mkdir -p /tmp/app-build
+      cp backend/target/app.jar /tmp/app-build/
+      
+      # 2. 创建最简单Dockerfile
+      cat > /tmp/app-build/Dockerfile << 'EOF'
+      FROM eclipse-temurin:17-jre
+      WORKDIR /app
+      COPY app.jar app.jar
+      EXPOSE 8080
+      ENTRYPOINT ["java", "-jar", "app.jar"]
+      EOF
+      
+      # 3. 构建镜像（本地用，不推送Registry）
+      echo "📦 构建本地镜像..."
+      cd /tmp/app-build
+      docker build -t fds-app:latest .
+      
+      # 4. 检查网络是否存在
+      echo "🌐 确认网络..."
+      if ! docker network ls | grep -q article-fds_article-net; then
+        echo "创建网络..."
+        docker network create article-fds_article-net
+        # 连接MySQL和Redis到网络
+        docker network connect article-fds_article-net article-mysql 2>/dev/null || true
+        docker network connect article-fds_article-net article-redis 2>/dev/null || true
+      fi
+      
+      # 5. 清理旧容器
+      echo "🧹 清理旧应用..."
+      docker stop article-backend 2>/dev/null || true
+      docker rm article-backend 2>/dev/null || true
+      
+      # 6. 启动新容器
+      echo "🚢 启动应用容器..."
+      docker run -d \
+        --name article-backend \
+        --restart unless-stopped \
+        -p 8081:8080 \
+        --network article-fds_article-net \
+        -e SPRING_PROFILES_ACTIVE=prod \
+        -e SPRING_DATASOURCE_URL=jdbc:mysql://article-mysql:3306/article_db?useSSL=false&characterEncoding=utf8 \
+        -e SPRING_DATASOURCE_USERNAME=root \
+        -e SPRING_DATASOURCE_PASSWORD=fds00913 \
+        -e SPRING_REDIS_HOST=article-redis \
+        -e SPRING_REDIS_PORT=6379 \
+        -e JAVA_OPTS="-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100" \
+        fds-app:latest
+      
+      # 7. 验证启动
+      echo "⏳ 等待应用启动..."
+      
+      # 等待1-容器启动
+      for i in {1..30}; do
+        if docker ps --format "table {{.Names}}\t{{.Status}}" | grep -q "article-backend.*Up"; then
+          echo "✅ 容器正在运行"
+          break
+        fi
+        echo "等待容器启动...($i/30)"
+        sleep 2
+      done
+      
+      # 等待2-应用内部启动
+      echo "⏳ 等待应用健康检查..."
+      HEALTH_SUCCESS=false
+      for i in {1..50}; do
+        # 方法1：从容器内部检查
+        if docker exec article-backend sh -c "curl -s http://localhost:8080/actuator/health" 2>/dev/null | grep -q "UP"; then
+          echo "✅ 应用健康检查通过"
+          HEALTH_SUCCESS=true
+          break
+        fi
+        
+        # 方法2：从外部检查
+        if curl -s --max-time 2 "http://localhost:8081/actuator/health" 2>/dev/null | grep -q "UP"; then
+          echo "✅ 外部健康检查通过"
+          HEALTH_SUCCESS=true
+          break
+        fi
+        
+        echo "健康检查中...($i/50)"
+        sleep 3
+        
+        # 每10次检查一次日志
+        if [ $((i % 10)) -eq 0 ]; then
+          echo "=== 最新日志 ==="
+          docker logs article-backend --tail 5 2>/dev/null || echo "无日志"
+        fi
+      done
+      
+      # 最终状态报告
+      echo ""
+      echo "📊 ==================== 部署结果 ===================="
+      echo "容器状态:"
+      docker ps --filter "name=article-backend" --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
+      
+      echo ""
+      echo "网络情况:"
+      docker network inspect article-fds_article-net --format='{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "网络检查失败"
+      
+      echo ""
+      echo "MySQL连接:"
+      docker exec article-mysql mysql -uroot -pfds00913 -e "SELECT '✅ MySQL连接正常'" 2>&1 | grep -v Warning || echo "⚠️ MySQL检查失败"
+      
+      echo ""
+      if [ "$HEALTH_SUCCESS" = true ]; then
+        echo "🎉 部署成功！应用可访问："
+        echo "http://49.233.185.174:8081/actuator/health"
+        echo "请复制上面的URL在浏览器中打开"
+      else
+        echo "⚠️ 部署可能存在问题，请检查日志："
+        echo "docker logs article-backend"
+        
+        # 显示错误日志
+        echo "最近的错误日志："
+        docker logs article-backend --tail 20 2>/dev/null | grep -i error || echo "无错误信息"
+        
+        echo "💡 尝试手动启动："
+        echo "1. 检查容器：docker exec article-backend ls -la /app"
+        echo "2. 检查应用：docker exec article-backend ps aux"
+        echo "3. 检查端口：docker exec article-backend netstat -tln"
+      fi
+  needs: ["build"]
   only:
     - feature/initial-commit
+    - main
   tags:
     - docker
+ 

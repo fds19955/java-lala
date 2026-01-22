@@ -11,7 +11,7 @@
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 #下面这个路径很容易搞错，一定要是/root/article-app/backend/target/app.jar下的，之前是..../app.jar
-COPY ./target/app.jar ./app.jar
+COPY target/app.jar app.jar
 
 # 设置时区
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
