@@ -22,7 +22,7 @@ build:
     - ls -lh target/
     - mv target/*.jar target/app.jar
     
-    echo "✅ JAR构建完成"
+    - echo "✅ JAR构建完成"  # 第25行：这里加上了减号！
   artifacts:
     paths:
       - backend/target/app.jar
@@ -169,6 +169,3 @@ deploy:
   only:
     - feature/initial-commit
     - main
-  tags:
-    - docker
- 
