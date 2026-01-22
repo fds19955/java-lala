@@ -93,6 +93,13 @@ deploy:
       docker stop article-backend 2>/dev/null || true
       docker rm article-backend 2>/dev/null || true
       
+      # 🔥 数据库初始化（简单的三行代码）
+      echo "📁 执行数据库初始化..."
+      docker exec article-mysql mysql -uroot -pfds00913 -e "DROP DATABASE IF EXISTS article_db; CREATE DATABASE article_db;"
+      cat mysql/init/article_db.sql | docker exec -i article-mysql mysql -uroot -pfds00913 article_db
+      echo "✅ 数据库初始化完成"
+      sleep 2
+
       # 6. 启动新容器
       echo "🚢 启动新应用..."
       docker run -d \
