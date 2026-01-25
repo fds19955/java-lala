@@ -1,16 +1,21 @@
 stages:
   - build-backend
   - build-frontend
-  - deploy-mysql
+  - deploy-db
   - deploy
 
+# ========== 全局配置 ==========
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
-  MYSQL_ROOT_PASSWORD: "fds00913"
+  # 敏感信息使用GitLab CI/CD变量，避免硬编码
+  MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}  # 在GitLab项目设置中配置
   MYSQL_DATABASE: "article_db"
+  DOCKER_NETWORK: "article-fds-net"
+  MYSQL_CONTAINER: "article-mysql"
+  REDIS_CONTAINER: "article-redis"
 
-# 阶段1：构建后端（不变）
+# ========== 阶段1：构建后端 ==========
 build-backend:
   stage: build-backend
   image: maven:3.9.8-eclipse-temurin-17
@@ -24,7 +29,7 @@ build-backend:
           <mirror>
             <id>alimaven</id>
             <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url> 
+            <url>https://maven.aliyun.com/repository/public</url>  
             <mirrorOf>central</mirrorOf>
           </mirror>
         </mirrors>
@@ -40,16 +45,16 @@ build-backend:
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - docker-runner
 
-# 阶段2：构建前端（不变）
+# ========== 阶段2：构建前端 ==========
 build-frontend:
   stage: build-frontend
   image: node:20-alpine
   script:
     - echo "📦 开始构建前端..."
     - cd frontend
-    - npm install --registry=https://registry.npmmirror.com 
+    - npm install --registry=https://registry.npmmirror.com  
     - npm run build
     - ls -lh dist/
   artifacts:
@@ -58,112 +63,120 @@ build-frontend:
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - docker-runner
 
-# 阶段3：部署数据库（关键修复）
-deploy-mysql:
-  stage: deploy-mysql
+# ========== 阶段3：部署数据库（核心修复） ==========
+deploy-db:
+  stage: deploy-db
   image: docker:24.0.7
+  before_script:
+    - apk add --no-cache bash coreutils  # 安装必要工具
   script:
     - |
-      echo "========== 部署数据库 =========="
+      set -euo pipefail  # 开启严格错误处理
       
-      # 1. 创建专用网络（如果不存在）
-      if ! docker network ls | grep -q article-fds_article-net; then
-        echo "创建专用网络..."
-        docker network create article-fds_article-net
+      echo "========== 部署数据库服务 =========="
+      
+      # 1. 确保网络存在
+      if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then
+        echo "🔧 创建专用Docker网络: ${DOCKER_NETWORK}"
+        docker network create "${DOCKER_NETWORK}"
+      else
+        echo "✅ Docker网络已存在: ${DOCKER_NETWORK}"
       fi
       
-      # 2. 创建数据卷（如果不存在）
-      if ! docker volume ls | grep -q mysql-data; then
-        echo "创建MySQL数据卷..."
-        docker volume create mysql-data
-      fi
-      
-      if ! docker volume ls | grep -q redis-data; then
-        echo "创建Redis数据卷..."
-        docker volume create redis-data
-      fi
-      
-      # 3. 部署MySQL容器
-      if ! docker ps --format "{{.Names}}" | grep -q "article-mysql"; then
-        echo "⚠️ MySQL容器不存在，创建新容器..."
-        
-        # 启动MySQL（使用数据卷）
+      # 2. 部署MySQL
+      if docker ps --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
+        echo "✅ MySQL容器已在运行"
+      elif docker ps -a --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
+        echo "🔄 重启已存在的MySQL容器"
+        docker start "${MYSQL_CONTAINER}"
+      else
+        echo "🚀 创建并启动MySQL容器"
         docker run -d \
-          --name article-mysql \
+          --name "${MYSQL_CONTAINER}" \
           --restart unless-stopped \
-          --network article-fds_article-net \
+          --network "${DOCKER_NETWORK}" \
           -p 3306:3306 \
-          -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
-          -e MYSQL_DATABASE=$MYSQL_DATABASE \
+          -e MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
+          -e MYSQL_DATABASE="${MYSQL_DATABASE}" \
           -v mysql-data:/var/lib/mysql \
-          mysql:8.0
-        
-        # 等待MySQL初始化
-        echo "等待数据库启动..."
-        i=1
-        while [ $i -le 20 ]; do
-          if docker exec article-mysql mysql -uroot -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" > /dev/null 2>&1; then
-            echo "✅ MySQL容器已就绪（$i秒）"
-            break
-          fi
-          echo "初始化中...($i/20)"
-          sleep 3
-          i=$((i + 1))
-        done
-        
-        # 检查启动状态
-        if ! docker exec article-mysql mysql -uroot -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" > /dev/null 2>&1; then
-          echo "❌ MySQL启动失败，查看日志："
-          docker logs article-mysql --tail 20
+          mysql:8.0 --default-authentication-plugin=mysql_native_password
+      fi
+      
+      # 等待MySQL就绪
+      echo "⏳ 等待MySQL初始化完成..."
+      for i in {1..30}; do
+        if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
+          echo "✅ MySQL已就绪"
+          break
+        fi
+        if [ $i -eq 30 ]; then
+          echo "❌ MySQL启动超时"
+          docker logs "${MYSQL_CONTAINER}" --tail 20
           exit 1
         fi
-      else
-        echo "✅ MySQL容器已运行"
-      fi
+        echo "初始化中...($i/30)"
+        sleep 2
+      done
       
-      # 4. 部署Redis容器
-      if ! docker ps --format "{{.Names}}" | grep -q "article-redis"; then
-        echo "⚠️ Redis容器不存在，创建新容器..."
+      # 3. 部署Redis（修复核心逻辑）
+      if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
+        echo "✅ Redis容器已在运行"
+      elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
+        echo "🔄 重启已存在的Redis容器"
+        docker start "${REDIS_CONTAINER}"
+      else
+        echo "🚀 创建并启动Redis容器"
         docker run -d \
-          --name article-redis \
+          --name "${REDIS_CONTAINER}" \
           --restart unless-stopped \
-          --network article-fds_article-net \
+          --network "${DOCKER_NETWORK}" \
           -p 6379:6379 \
           -v redis-data:/data \
-          redis:alpine
+          redis:alpine redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+      fi
+      
+      # 验证Redis连接
+      if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
+        echo "✅ Redis连接正常"
       else
-        echo "✅ Redis容器已运行"
+        echo "❌ Redis连接失败"
+        docker logs "${REDIS_CONTAINER}" --tail 20
+        exit 1
       fi
       
       echo "========== 数据库部署完成 =========="
+  only:
+    - feature/initial-commit
   tags:
-    - docker
+    - docker-runner
 
-# 阶段4：部署前后端（不变）
+# ========== 阶段4：部署前后端 ==========
 deploy:
   stage: deploy
   image: docker:24.0.7
-  needs: ["build-backend", "build-frontend", "deploy-mysql"]
+  needs: ["build-backend", "build-frontend", "deploy-db"]
+  before_script:
+    - apk add --no-cache bash coreutils
   script:
     - |
-      echo "========== 开始部署应用 =========="
+      set -euo pipefail
+      
+      echo "========== 部署应用服务 =========="
       
       # 1. 部署后端
       echo "🚀 部署后端服务..."
       
-      # 确认有JAR文件
-      echo "查找JAR文件..."
-      if ls backend/target/*.jar 1>/dev/null 2>&1; then
-        JAR_FILE=$(ls backend/target/*.jar | head -1)
-        echo "✅ 找到JAR文件: $JAR_FILE"
-      else
-        echo "❌ 错误：没有找到JAR文件"
+      # 检查JAR文件
+      if ! ls backend/target/*.jar 1>/dev/null 2>&1; then
+        echo "❌ 错误：未找到后端JAR文件"
         exit 1
       fi
+      JAR_FILE=$(ls backend/target/*.jar | head -1)
+      echo "✅ 找到JAR文件: ${JAR_FILE}"
       
-      # 创建后端Dockerfile
+      # 构建后端镜像
       cat > Dockerfile << 'EOF'
       FROM eclipse-temurin:17-jre
       WORKDIR /app
@@ -172,37 +185,39 @@ deploy:
       ENTRYPOINT ["java", "-jar", "app.jar"]
       EOF
       
-      # 构建后端镜像
-      echo "📦 构建Docker镜像..."
+      echo "📦 构建后端Docker镜像"
       docker build -t article-backend:latest .
       
-      # 停止旧容器
-      echo "🧹 停止旧版本应用..."
+      # 替换后端容器
+      echo "🔄 替换后端容器"
       docker stop article-backend 2>/dev/null || true
       docker rm article-backend 2>/dev/null || true
       
-      # 启动新后端容器
-      echo "🚢 启动新应用..."
       docker run -d \
         --name article-backend \
         --restart unless-stopped \
+        --network "${DOCKER_NETWORK}" \
         -p 8081:8080 \
-        --network article-fds_article-net \
         -e SPRING_PROFILES_ACTIVE=prod \
         -e SPRING_DATASOURCE_URL='jdbc:mysql://article-mysql:3306/article_db?useSSL=false&serverTimezone=Asia/Shanghai' \
         -e SPRING_DATASOURCE_USERNAME=root \
-        -e SPRING_DATASOURCE_PASSWORD=fds00913 \
+        -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
         -e SPRING_REDIS_HOST='article-redis' \
         -e SPRING_REDIS_PORT=6379 \
         -e SERVER_PORT=8080 \
-        -e LOGGING_LEVEL_ROOT=info \
         -e JAVA_OPTS='-Xmx512m -Xms256m' \
         article-backend:latest
       
       # 2. 部署前端
       echo "🚀 部署前端服务..."
       
-      # 创建前端Dockerfile
+      # 检查前端静态文件
+      if [ ! -d "frontend/dist" ]; then
+        echo "❌ 错误：未找到前端构建产物"
+        exit 1
+      fi
+      
+      # 构建前端镜像
       cat > frontend/Dockerfile << 'EOF'
       FROM nginx:alpine
       COPY dist /usr/share/nginx/html
@@ -210,23 +225,23 @@ deploy:
       CMD ["nginx", "-g", "daemon off;"]
       EOF
       
-      # 构建前端镜像
+      echo "📦 构建前端Docker镜像"
       docker build -t article-frontend:latest frontend/
       
-      # 停止旧前端容器
+      # 替换前端容器
+      echo "🔄 替换前端容器"
       docker stop article-frontend 2>/dev/null || true
       docker rm article-frontend 2>/dev/null || true
       
-      # 启动新前端容器
       docker run -d \
         --name article-frontend \
         --restart unless-stopped \
+        --network "${DOCKER_NETWORK}" \
         -p 80:80 \
-        --network article-fds_article-net \
         article-frontend:latest
       
-      # 3. 健康检查（略）
+      echo "========== 应用部署完成 =========="
   only:
     - feature/initial-commit
   tags:
-    - docker
+    - docker-runner
