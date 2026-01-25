@@ -8,7 +8,6 @@ stages:
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
-  # 敏感信息使用GitLab CI/CD变量，避免硬编码
   MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}  # 在GitLab项目设置中配置
   MYSQL_DATABASE: "article_db"
   DOCKER_NETWORK: "article-fds-net"
@@ -70,10 +69,10 @@ deploy-db:
   stage: deploy-db
   image: docker:24.0.7
   before_script:
-    - apk add --no-cache bash coreutils  # 安装必要工具
+    - apk add --no-cache bash coreutils
   script:
     - |
-      set -euo pipefail  # 开启严格错误处理
+      set -euo pipefail
       
       echo "========== 部署数据库服务 =========="
       
@@ -104,9 +103,9 @@ deploy-db:
           mysql:8.0 --default-authentication-plugin=mysql_native_password
       fi
       
-      # 等待MySQL就绪
+      # 等待MySQL就绪（修复语法错误）
       echo "⏳ 等待MySQL初始化完成..."
-      for i in {1..30}; do
+      for ((i=1; i<=30; i++)); do
         if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
           echo "✅ MySQL已就绪"
           break
@@ -120,7 +119,7 @@ deploy-db:
         sleep 2
       done
       
-      # 3. 部署Redis（修复核心逻辑）
+      # 3. 部署Redis（修复连接时序问题）
       if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
         echo "✅ Redis容器已在运行"
       elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
@@ -137,14 +136,21 @@ deploy-db:
           redis:alpine redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
       fi
       
-      # 验证Redis连接
-      if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
-        echo "✅ Redis连接正常"
-      else
-        echo "❌ Redis连接失败"
-        docker logs "${REDIS_CONTAINER}" --tail 20
-        exit 1
-      fi
+      # 等待Redis就绪（新增等待逻辑）
+      echo "⏳ 等待Redis初始化完成..."
+      for ((i=1; i<=20; i++)); do
+        if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
+          echo "✅ Redis已就绪"
+          break
+        fi
+        if [ $i -eq 20 ]; then
+          echo "❌ Redis启动超时"
+          docker logs "${REDIS_CONTAINER}" --tail 20
+          exit 1
+        fi
+        echo "初始化中...($i/20)"
+        sleep 1
+      done
       
       echo "========== 数据库部署完成 =========="
   only:
