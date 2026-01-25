@@ -1,14 +1,15 @@
 stages:
-  - build
+  - build-backend
+  - build-frontend
   - deploy
 
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
 
-# 阶段1：构建JAR（不变，已成功）
-build:
-  stage: build
+# 阶段1：构建后端（保留你已验证成功的配置）
+build-backend:
+  stage: build-backend
   image: maven:3.9.8-eclipse-temurin-17
   script:
     - |
@@ -20,7 +21,7 @@ build:
           <mirror>
             <id>alimaven</id>
             <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url>
+            <url>https://maven.aliyun.com/repository/public</url> 
             <mirrorOf>central</mirrorOf>
           </mirror>
         </mirrors>
@@ -38,17 +39,37 @@ build:
   tags:
     - docker
 
-# 阶段2：部署（修复shell语法）
+# 阶段2：新增前端构建
+build-frontend:
+  stage: build-frontend
+  image: node:20-alpine
+  script:
+    - echo "📦 开始构建前端..."
+    - cd frontend
+    - npm install --registry=https://registry.npmmirror.com 
+    - npm run build
+    - ls -lh dist/
+  artifacts:
+    paths:
+      - frontend/dist/
+  only:
+    - feature/initial-commit
+  tags:
+    - docker
+
+# 阶段3：同时部署后端和前端
 deploy:
   stage: deploy
   image: docker:24.0.7
-  before_script:
-    - echo "Docker环境检查"
+  needs: ["build-backend", "build-frontend"]
   script:
     - |
       echo "========== 开始部署 =========="
       
-      # 1. 确认有JAR文件
+      # 1. 部署后端（保留你已验证成功的配置）
+      echo "🚀 部署后端服务..."
+      
+      # 确认有JAR文件
       echo "查找JAR文件..."
       if ls backend/target/*.jar 1>/dev/null 2>&1; then
         JAR_FILE=$(ls backend/target/*.jar | head -1)
@@ -58,7 +79,7 @@ deploy:
         exit 1
       fi
       
-      # 2. 创建Dockerfile
+      # 创建后端Dockerfile
       cat > Dockerfile << 'EOF'
       FROM eclipse-temurin:17-jre
       WORKDIR /app
@@ -67,11 +88,11 @@ deploy:
       ENTRYPOINT ["java", "-jar", "app.jar"]
       EOF
       
-      # 3. 构建镜像
+      # 构建后端镜像
       echo "📦 构建Docker镜像..."
       docker build -t article-backend:latest .
       
-      # 4. 确保网络
+      # 确保网络
       echo "🌐 检查网络连接..."
       if ! docker network ls | grep -q article-fds_article-net; then
         echo "创建网络并连接数据库..."
@@ -88,19 +109,19 @@ deploy:
         fi
       fi
       
-      # 5. 停止旧容器
+      # 停止旧容器
       echo "🧹 停止旧版本应用..."
       docker stop article-backend 2>/dev/null || true
       docker rm article-backend 2>/dev/null || true
       
-      # 🔥 数据库初始化（简单的三行代码）
+      # 数据库初始化
       echo "📁 执行数据库初始化..."
       docker exec article-mysql mysql -uroot -pfds00913 -e "DROP DATABASE IF EXISTS article_db; CREATE DATABASE article_db;"
       cat mysql/init/article_db.sql | docker exec -i article-mysql mysql -uroot -pfds00913 article_db
       echo "✅ 数据库初始化完成"
       sleep 2
 
-      # 6. 启动新容器
+      # 启动新容器
       echo "🚢 启动新应用..."
       docker run -d \
         --name article-backend \
@@ -118,43 +139,94 @@ deploy:
         -e JAVA_OPTS='-Xmx512m -Xms256m' \
         article-backend:latest
       
-      # 7. 健康检查（简化，兼容sh）
+      # 2. 部署前端（新增部分）
+      echo "🚀 部署前端服务..."
+      
+      # 创建前端Dockerfile
+      cat > frontend/Dockerfile << 'EOF'
+      FROM nginx:alpine
+      COPY dist /usr/share/nginx/html
+      EXPOSE 80
+      CMD ["nginx", "-g", "daemon off;"]
+      EOF
+      
+      # 构建前端镜像
+      echo "📦 构建前端Docker镜像..."
+      docker build -t article-frontend:latest frontend/
+      
+      # 停止旧前端容器
+      echo "🧹 停止旧版本前端..."
+      docker stop article-frontend 2>/dev/null || true
+      docker rm article-frontend 2>/dev/null || true
+      
+      # 启动新前端容器
+      echo "🚢 启动新前端服务..."
+      docker run -d \
+        --name article-frontend \
+        --restart unless-stopped \
+        -p 80:80 \
+        --network article-fds_article-net \
+        article-frontend:latest
+      
+      # 3. 健康检查（同时检查后端和前端）
       echo ""
       echo "========== 健康检查开始 =========="
       
-      # 检查容器状态（用简单的计数循环）
-      echo "🔍 检查容器状态..."
-      CONTAINER_STARTED=false
+      # 检查后端容器状态
+      echo "🔍 检查后端容器状态..."
+      BACKEND_STARTED=false
       i=1
       while [ $i -le 20 ]; do
         if docker ps --format "table {{.Names}}\t{{.Status}}" | grep -q "article-backend.*Up"; then
-          CONTAINER_STARTED=true
-          echo "✅ 容器已启动（$i秒）"
+          BACKEND_STARTED=true
+          echo "✅ 后端容器已启动（$i秒）"
           break
         fi
-        echo "等待容器启动...($i/20)"
+        echo "等待后端容器启动...($i/20)"
         sleep 2
         i=$((i + 1))
       done
       
-      if [ "$CONTAINER_STARTED" != true ]; then
-        echo "❌ 容器启动失败，查看日志..."
-        docker logs article-backend 2>/dev/null | tail -20 || echo "无法获取日志"
-        echo "⚠️ 但部署流程已完成"
-        # 继续执行，不退出
-      fi
+      # 检查前端容器状态
+      echo "🔍 检查前端容器状态..."
+      FRONTEND_STARTED=false
+      i=1
+      while [ $i -le 20 ]; do
+        if docker ps --format "table {{.Names}}\t{{.Status}}" | grep -q "article-frontend.*Up"; then
+          FRONTEND_STARTED=true
+          echo "✅ 前端容器已启动（$i秒）"
+          break
+        fi
+        echo "等待前端容器启动...($i/20)"
+        sleep 2
+        i=$((i + 1))
+      done
       
-      # 应用启动检查
+      # 后端应用启动检查
       echo ""
-      echo "🔍 检查应用启动..."
+      echo "🔍 检查后端应用启动..."
       i=1
       while [ $i -le 15 ]; do
         if docker logs article-backend 2>/dev/null | grep -i "Started.*Application\|Started.*in.*seconds" > /dev/null; then
-          echo "✅ 应用已启动（$i秒）"
+          echo "✅ 后端应用已启动（$i秒）"
           break
         fi
-        echo "等待应用完全启动...($i/15)"
+        echo "等待后端应用完全启动...($i/15)"
         sleep 4
+        i=$((i + 1))
+      done
+      
+      # 前端应用启动检查
+      echo ""
+      echo "🔍 检查前端应用启动..."
+      i=1
+      while [ $i -le 10 ]; do
+        if curl -s -o /dev/null -w "%{http_code}" "http://localhost" --max-time 5 2>/dev/null | grep -q "200"; then
+          echo "✅ 前端应用已启动（$i秒）"
+          break
+        fi
+        echo "等待前端应用完全启动...($i/10)"
+        sleep 5
         i=$((i + 1))
       done
       
@@ -167,7 +239,6 @@ deploy:
       while [ $i -le 10 ]; do
         echo "第 $i 次尝试..."
         
-        # 简单测试，不依赖复杂的HTTP状态码解析
         API_TEST=$(curl -s -o /dev/null -w "%{http_code}" "http://49.233.185.174:8081/api/articles" --max-time 5 2>/dev/null || echo "000")
         
         if [ "$API_TEST" != "000" ] && [ "$API_TEST" != "" ]; then
@@ -181,26 +252,28 @@ deploy:
         i=$((i + 1))
       done
       
-      # 8. 最终报告
+      # 4. 最终报告
       echo ""
       echo "========== 部署完成报告 =========="
       
       echo "📊 容器状态:"
-      docker ps --filter "name=article-backend" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "获取容器状态失败"
+      docker ps --filter "name=article-backend" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "获取后端容器状态失败"
+      docker ps --filter "name=article-frontend" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "获取前端容器状态失败"
       
       echo ""
-      echo "📝 最后5行日志:"
-      docker logs article-backend --tail 5 2>/dev/null || echo "无法获取日志"
+      echo "📝 后端最后5行日志:"
+      docker logs article-backend --tail 5 2>/dev/null || echo "无法获取后端日志"
       
       echo ""
       echo "✅ 部署作业已完成"
-      echo "应用已成功启动，可通过以下地址访问:"
+      echo "前端已成功启动，可通过以下地址访问:"
+      echo "🌐 http://49.233.185.174"
+      echo "后端API可通过以下地址访问:"
       echo "🌐 http://49.233.185.174:8081/api/articles"
       echo ""
-      echo "提示: 如果API无响应，请稍等1-2分钟让应用完全初始化"
-      echo "手动检查: docker logs article-backend"
+      echo "提示: 如果服务无响应，请稍等1-2分钟让应用完全初始化"
+      echo "手动检查: docker logs article-backend 或 docker logs article-frontend"
       echo "========== 结束 =========="
-  needs: ["build"]
   only:
     - feature/initial-commit
   tags:
