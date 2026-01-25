@@ -45,7 +45,7 @@ build-backend:
   only:
     - feature/initial-commit
   tags:
-    - docker-runner
+    - docker
 
 # ========== 阶段2：构建前端 ==========
 build-frontend:
@@ -63,7 +63,7 @@ build-frontend:
   only:
     - feature/initial-commit
   tags:
-    - docker-runner
+    - docker
 
 # ========== 阶段3：部署数据库（核心修复） ==========
 deploy-db:
@@ -150,7 +150,7 @@ deploy-db:
   only:
     - feature/initial-commit
   tags:
-    - docker-runner
+    - docker
 
 # ========== 阶段4：部署前后端 ==========
 deploy:
@@ -244,4 +244,4 @@ deploy:
   only:
     - feature/initial-commit
   tags:
-    - docker-runner
+    - docker
