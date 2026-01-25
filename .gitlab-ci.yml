@@ -8,7 +8,7 @@ stages:
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
-  MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}  # 在GitLab项目设置中配置
+  MYSQL_ROOT_PASSWORD: $DB_ROOT_PASSWORD  # GitLab CI变量格式
   MYSQL_DATABASE: "article_db"
   DOCKER_NETWORK: "article-fds-net"
   MYSQL_CONTAINER: "article-mysql"
@@ -28,7 +28,7 @@ build-backend:
           <mirror>
             <id>alimaven</id>
             <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url>  
+            <url>https://maven.aliyun.com/repository/public</url>   
             <mirrorOf>central</mirrorOf>
           </mirror>
         </mirrors>
@@ -53,7 +53,7 @@ build-frontend:
   script:
     - echo "📦 开始构建前端..."
     - cd frontend
-    - npm install --registry=https://registry.npmmirror.com  
+    - npm install --registry=https://registry.npmmirror.com   
     - npm run build
     - ls -lh dist/
   artifacts:
@@ -72,6 +72,8 @@ deploy-db:
     - apk add --no-cache bash coreutils
   script:
     - |
+      # 切换到bash执行
+      exec bash << 'BASH_SCRIPT'
       set -euo pipefail
       
       echo "========== 部署数据库服务 =========="
@@ -103,9 +105,10 @@ deploy-db:
           mysql:8.0 --default-authentication-plugin=mysql_native_password
       fi
       
-      # 等待MySQL就绪（修复语法错误）
+      # 等待MySQL就绪（使用sh兼容的循环）
       echo "⏳ 等待MySQL初始化完成..."
-      for ((i=1; i<=30; i++)); do
+      i=1
+      while [ $i -le 30 ]; do
         if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
           echo "✅ MySQL已就绪"
           break
@@ -117,9 +120,10 @@ deploy-db:
         fi
         echo "初始化中...($i/30)"
         sleep 2
+        i=$((i + 1))
       done
       
-      # 3. 部署Redis（修复连接时序问题）
+      # 3. 部署Redis
       if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
         echo "✅ Redis容器已在运行"
       elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
@@ -136,9 +140,10 @@ deploy-db:
           redis:alpine redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
       fi
       
-      # 等待Redis就绪（新增等待逻辑）
+      # 等待Redis就绪（使用sh兼容的循环）
       echo "⏳ 等待Redis初始化完成..."
-      for ((i=1; i<=20; i++)); do
+      i=1
+      while [ $i -le 20 ]; do
         if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
           echo "✅ Redis已就绪"
           break
@@ -150,9 +155,11 @@ deploy-db:
         fi
         echo "初始化中...($i/20)"
         sleep 1
+        i=$((i + 1))
       done
       
       echo "========== 数据库部署完成 =========="
+      BASH_SCRIPT
   only:
     - feature/initial-commit
   tags:
@@ -167,6 +174,8 @@ deploy:
     - apk add --no-cache bash coreutils
   script:
     - |
+      # 切换到bash执行
+      exec bash << 'BASH_SCRIPT'
       set -euo pipefail
       
       echo "========== 部署应用服务 =========="
@@ -247,6 +256,7 @@ deploy:
         article-frontend:latest
       
       echo "========== 应用部署完成 =========="
+      BASH_SCRIPT
   only:
     - feature/initial-commit
   tags:
