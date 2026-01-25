@@ -1,14 +1,14 @@
 stages:
   - build-backend
   - build-frontend
-  - deploy-mysql  # 新增数据库部署阶段
+  - deploy-mysql
   - deploy
 
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
   DOCKER_TLS_CERTDIR: ""
-  MYSQL_ROOT_PASSWORD: "fds00913"  # MySQL密码
-  MYSQL_DATABASE: "article_db"     # 默认数据库名
+  MYSQL_ROOT_PASSWORD: "fds00913"
+  MYSQL_DATABASE: "article_db"
 
 # 阶段1：构建后端（不变）
 build-backend:
@@ -60,7 +60,7 @@ build-frontend:
   tags:
     - docker
 
-# 阶段3：新增数据库部署（关键修复）
+# 阶段3：部署数据库（关键修复）
 deploy-mysql:
   stage: deploy-mysql
   image: docker:24.0.7
@@ -68,17 +68,28 @@ deploy-mysql:
     - |
       echo "========== 部署数据库 =========="
       
-      # 1. 检查网络
+      # 1. 创建专用网络（如果不存在）
       if ! docker network ls | grep -q article-fds_article-net; then
         echo "创建专用网络..."
         docker network create article-fds_article-net
       fi
       
-      # 2. 检查MySQL容器状态
+      # 2. 创建数据卷（如果不存在）
+      if ! docker volume ls | grep -q mysql-data; then
+        echo "创建MySQL数据卷..."
+        docker volume create mysql-data
+      fi
+      
+      if ! docker volume ls | grep -q redis-data; then
+        echo "创建Redis数据卷..."
+        docker volume create redis-data
+      fi
+      
+      # 3. 部署MySQL容器
       if ! docker ps --format "{{.Names}}" | grep -q "article-mysql"; then
         echo "⚠️ MySQL容器不存在，创建新容器..."
         
-        # 启动MySQL容器（带数据持久化）
+        # 启动MySQL（使用数据卷）
         docker run -d \
           --name article-mysql \
           --restart unless-stopped \
@@ -86,7 +97,7 @@ deploy-mysql:
           -p 3306:3306 \
           -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
           -e MYSQL_DATABASE=$MYSQL_DATABASE \
-          -v mysql-data:/var/lib/mysql \  # 数据持久化卷
+          -v mysql-data:/var/lib/mysql \
           mysql:8.0
         
         # 等待MySQL初始化
@@ -102,7 +113,7 @@ deploy-mysql:
           i=$((i + 1))
         done
         
-        # 检查是否启动成功
+        # 检查启动状态
         if ! docker exec article-mysql mysql -uroot -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" > /dev/null 2>&1; then
           echo "❌ MySQL启动失败，查看日志："
           docker logs article-mysql --tail 20
@@ -112,7 +123,7 @@ deploy-mysql:
         echo "✅ MySQL容器已运行"
       fi
       
-      # 3. 检查Redis（如果需要）
+      # 4. 部署Redis容器
       if ! docker ps --format "{{.Names}}" | grep -q "article-redis"; then
         echo "⚠️ Redis容器不存在，创建新容器..."
         docker run -d \
@@ -130,16 +141,16 @@ deploy-mysql:
   tags:
     - docker
 
-# 阶段4：部署前后端（修改后）
+# 阶段4：部署前后端（不变）
 deploy:
   stage: deploy
   image: docker:24.0.7
-  needs: ["build-backend", "build-frontend", "deploy-mysql"]  # 依赖数据库部署
+  needs: ["build-backend", "build-frontend", "deploy-mysql"]
   script:
     - |
       echo "========== 开始部署应用 =========="
       
-      # 1. 部署后端（保留原逻辑）
+      # 1. 部署后端
       echo "🚀 部署后端服务..."
       
       # 确认有JAR文件
@@ -188,7 +199,7 @@ deploy:
         -e JAVA_OPTS='-Xmx512m -Xms256m' \
         article-backend:latest
       
-      # 2. 部署前端（保留原逻辑）
+      # 2. 部署前端
       echo "🚀 部署前端服务..."
       
       # 创建前端Dockerfile
@@ -214,13 +225,8 @@ deploy:
         --network article-fds_article-net \
         article-frontend:latest
       
-      # 3. 健康检查（略，保持原逻辑）
+      # 3. 健康检查（略）
   only:
     - feature/initial-commit
   tags:
     - docker
-
-# 声明数据卷（持久化MySQL数据）
-volumes:
-  mysql-data:
-  redis-data:
