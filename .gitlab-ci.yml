@@ -27,18 +27,18 @@ build-backend:
       # 创建Maven阿里云镜像配置
       mkdir -p ~/.m2
       cat > ~/.m2/settings.xml << 'EOF'
-      <?xml version="1.0" encoding="UTF-8"?>
-      <settings>
-        <mirrors>
-          <mirror>
-            <id>alimaven</id>
-            <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url>
-            <mirrorOf>central</mirrorOf>
-          </mirror>
-        </mirrors>
-      </settings>
-      EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <mirrors>
+    <mirror>
+      <id>alimaven</id>
+      <name>aliyun maven</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
       
       echo "📦 进入backend目录编译..."
       cd backend
@@ -285,6 +285,7 @@ deploy-db:
     - develop
   tags:
     - docker
+
 # ========== 阶段4：部署前后端应用 ==========
 deploy:
   stage: deploy
@@ -342,12 +343,12 @@ deploy:
       # 2.2 构建后端Docker镜像
       echo "📦 构建后端Docker镜像..."
       cat > Dockerfile << 'EOF'
-      FROM eclipse-temurin:17-jre-alpine
-      WORKDIR /app
-      COPY backend/target/*.jar app.jar
-      EXPOSE 8080
-      ENTRYPOINT ["java", "-jar", "app.jar"]
-      EOF
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY backend/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
       
       docker build -t article-backend:latest .
       
@@ -396,39 +397,39 @@ deploy:
         
         # 3.2 创建Nginx配置文件
         cat > frontend/nginx.conf << 'EOF'
-        server {
-            listen 80;
-            server_name localhost;
-            root /usr/share/nginx/html;
-            
-            # Vue Router history模式支持
-            location / {
-                try_files $uri $uri/ /index.html;
-            }
-            
-            # 静态资源缓存
-            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-                expires 1y;
-                add_header Cache-Control "public, immutable";
-            }
-            
-            # 代理后端API（可选）
-            location /api/ {
-                proxy_pass http://article-backend:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-            }
-        }
-        EOF
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    
+    # Vue Router history模式支持
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    # 静态资源缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # 代理后端API（可选）
+    location /api/ {
+        proxy_pass http://article-backend:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
         
         # 3.3 创建前端Dockerfile
         cat > frontend/Dockerfile << 'EOF'
-        FROM nginx:alpine
-        COPY dist/ /usr/share/nginx/html
-        COPY nginx.conf /etc/nginx/conf.d/default.conf
-        EXPOSE 80
-        CMD ["nginx", "-g", "daemon off;"]
-        EOF
+FROM nginx:alpine
+COPY dist/ /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+EOF
         
         # 3.4 构建前端镜像
         echo "📦 构建前端Docker镜像..."
