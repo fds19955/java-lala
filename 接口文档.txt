@@ -10,7 +10,7 @@
 创建分类：POST http://localhost:8080/api/categories
 更新分类：PUT http://localhost:8080/api/categories/{id}
 删除分类：DELETE http://localhost:8080/api/categories/{id}
-3. 用户相关接口 (UserController)
+3. 用户相关接口 (UserController) 123
 获取用户列表：GET http://localhost:8080/api/users         测试用
 获取用户详情：GET http://localhost:8080/api/users/{id}
 创建用户：POST http://localhost:8080/api/users
