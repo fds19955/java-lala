@@ -193,29 +193,52 @@ deploy-db:
 # ========== 阶段5：部署应用 ==========
 deploy:
   stage: deploy
-  image: docker:24.0.7 
+  image: docker:24.0.7
   needs:
-    - push-images 
-    - deploy-db 
+    - push-images
+    - deploy-db
   before_script:
     - apk add --no-cache bash coreutils curl
   script:
-    # 最简化的部署脚本
     - echo "========== 从阿里云仓库拉取镜像并部署 =========="
     - echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
     - BACKEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
     - echo "📥 拉取后端镜像: $BACKEND_IMAGE"
     - docker pull "$BACKEND_IMAGE"
     - docker tag "$BACKEND_IMAGE" article-backend:latest
-    - if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then docker network create "${DOCKER_NETWORK}"; fi 
+    - |
+      if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then
+        docker network create "${DOCKER_NETWORK}"
+      fi
     - echo "🚀 部署后端服务..."
-    - docker stop article-backend 2>/dev/null || true 
+    - docker stop article-backend 2>/dev/null || true
     - docker rm article-backend 2>/dev/null || true
-    - docker run -d --name article-backend --restart unless-stopped --network "${DOCKER_NETWORK}" -p ${BACKEND_PORT}:8080 -e SPRING_PROFILES_ACTIVE=prod -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai" -e SPRING_DATASOURCE_USERNAME=root -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" -e SPRING_REDIS_HOST="${REDIS_CONTAINER}" -e SPRING_REDIS_PORT=6379 article-backend:latest
+    # 关键修复：将包含复杂参数的命令放入一个独立的脚本块中，避免YAML解析特殊字符
+    - |
+      docker run -d \
+        --name article-backend \
+        --restart unless-stopped \
+        --network "${DOCKER_NETWORK}" \
+        -p ${BACKEND_PORT}:8080 \
+        -e SPRING_PROFILES_ACTIVE=prod \
+        -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai" \
+        -e SPRING_DATASOURCE_USERNAME=root \
+        -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
+        -e SPRING_REDIS_HOST="${REDIS_CONTAINER}" \
+        -e SPRING_REDIS_PORT=6379 \
+        article-backend:latest
     - echo "⏳ 等待后端应用启动..."
-    - for i in $(seq 1 20); do if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then echo "✅ 后端应用已完全启动 (${i}秒)"; break; fi; echo "等待中... (${i}/20)"; sleep 3; done 
+    - |
+      for i in $(seq 1 20); do
+        if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then
+          echo "✅ 后端应用已完全启动 (${i}秒)"
+          break
+        fi
+        echo "等待中... (${i}/20)"
+        sleep 3
+      done
     - echo "🧪 健康检查..."
     - curl -s -o /dev/null -w "HTTP状态码: %{http_code}\n" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 || echo "健康检查超时"
     - echo "✅ 部署完成"
   tags:
-    - docker 
+    - docker
