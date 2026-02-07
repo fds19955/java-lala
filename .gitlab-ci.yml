@@ -1,4 +1,5 @@
 stages:
+  - test-aliyun
   - build-backend
   - build-frontend
   - push-images
@@ -22,6 +23,26 @@ variables:
   DOCKER_NAMESPACE: "fds-article"
   ALIYUN_REGISTRY_USER: "nick1191472774"
   CI_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD
+
+
+# ========== 阶段0：阿里云测试 ==========
+test-aliyun:
+  stage: test-aliyun
+  script:
+    - |
+      # 添加调试信息
+      echo "🔍 调试信息:"
+      echo "用户名: $ALIYUN_REGISTRY_USER"
+      echo "仓库: $DOCKER_REGISTRY"
+      echo "命名空间: $DOCKER_NAMESPACE"
+      echo "密码长度: ${#ALIYUN_REGISTRY_PASSWORD} 字符"
+      
+      # 测试echo到docker login
+      echo "测试密码传递..."
+      echo "密码前4位: ${ALIYUN_REGISTRY_PASSWORD:0:4}****"
+      
+      # 直接测试登录
+      echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
 
 # ========== 阶段1：构建后端 ==========
 build-backend:
