@@ -229,6 +229,7 @@ push-images:
       echo "前端: ${FRONTEND_IMAGE_TAG:-未构建}"
       
       echo "✅ 镜像推送阶段完成"
+      fi
   only:
     - feature/initial-commit
     - main
