@@ -208,6 +208,7 @@ push-images:
       
       echo "✅ 镜像推送阶段完成"
   only:
+    - feature/initial-commit
     - main
     - develop
   tags:
@@ -542,6 +543,7 @@ deploy:
       echo "✅ CI/CD流水线执行完成"
       BASH_SCRIPT
   only:
+    - feature/initial-commit
     - main
     - develop
   tags:
