@@ -128,7 +128,7 @@ build-frontend:
 # ========== 阶段3：推送镜像到阿里云仓库 ==========
 push-images:
   stage: push-images
-  image: docker:24.0.7
+  image: docker:24.0.7 
   needs:
     - build-backend
     - build-frontend
@@ -147,22 +147,22 @@ push-images:
           echo "✅ 阿里云仓库登录成功"
         else
           echo "❌ 阿里云仓库登录失败"
-          exit 1
+          exit 1 
         fi
-      else
+      else 
         echo "❌ 缺少登录凭证"
         exit 1
-      fi
+      fi 
       
       # 2. 构建并推送后端镜像
       echo "📦 构建后端镜像..."
       cat > Dockerfile.backend << 'EOF'
-      FROM eclipse-temurin:17-jre-alpine
-      WORKDIR /app
-      COPY backend/target/*.jar app.jar
-      EXPOSE 8080
-      ENTRYPOINT ["java", "-jar", "app.jar"]
-      EOF
+FROM eclipse-temurin:17-jre-alpine 
+WORKDIR /app
+COPY backend/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
       
       # 生成镜像标签
       BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
@@ -181,14 +181,14 @@ push-images:
       echo "✅ 后端镜像推送完成"
       
       # 4. 构建并推送前端镜像（如果存在）
-      if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
+      if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then 
         echo "📦 构建前端镜像..."
         
         cat > frontend/Dockerfile.frontend << 'EOF'
-        FROM nginx:alpine
-        COPY dist/ /usr/share/nginx/html
-        EXPOSE 80
-        EOF
+FROM nginx:alpine
+COPY dist/ /usr/share/nginx/html
+EXPOSE 80 
+EOF 
         
         # 生成前端镜像标签
         FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
@@ -206,37 +206,40 @@ push-images:
         echo "✅ 前端镜像推送完成"
       else
         echo "⚠️ 前端构建产物不存在，跳过前端镜像构建"
-      fi
+      fi 
       
       # 5. 验证镜像推送
       echo "🔍 验证镜像推送..."
       if docker pull "$BACKEND_IMAGE_TAG"; then
         echo "✅ 后端镜像验证成功"
-      else
+      else 
         echo "❌ 后端镜像验证失败"
-        exit 1
+        exit 1 
       fi
       
-      # 6. 生成镜像报告
+      # 6. 生成镜像报告 
       echo ""
-      echo "========== 镜像推送报告 =========="
+      echo "========== 镜像推送报告 ==========" 
       echo "✅ 推送成功的镜像:"
       docker images | grep "$DOCKER_REGISTRY/$DOCKER_NAMESPACE" || echo "无相关镜像"
       
       echo ""
       echo "🔗 镜像地址:"
       echo "后端: $BACKEND_IMAGE_TAG"
-      echo "前端: ${FRONTEND_IMAGE_TAG:-未构建}"
+      if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then 
+        echo "前端: ${FRONTEND_IMAGE_TAG}"
+      else
+        echo "前端: 未构建"
+      fi
       
       echo "✅ 镜像推送阶段完成"
       
   only:
-    - feature/initial-commit
-    - main
-    - develop
+    - feature/initial-commit 
+    - main 
+    - develop 
   tags:
     - docker
-
 # ========== 阶段4：部署数据库 ==========
 deploy-db:
   stage: deploy-db
