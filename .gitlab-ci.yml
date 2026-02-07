@@ -388,6 +388,7 @@ deploy-db:
     - docker
 
 # ========== 阶段5：部署应用（从阿里云仓库拉取镜像） ==========
+# ========== 阶段5：部署应用 ==========
 deploy:
   stage: deploy
   image: docker:24.0.7
@@ -414,13 +415,16 @@ deploy:
       docker pull "$BACKEND_IMAGE"
       docker tag "$BACKEND_IMAGE" article-backend:latest
       
-      # 3. 拉取前端镜像（如果存在）
+      # 3. 尝试拉取前端镜像（改进的判断逻辑）
       FRONTEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
+      echo "🔍 检查前端镜像是否存在..."
       if docker pull "$FRONTEND_IMAGE" 2>/dev/null; then
         echo "📥 拉取前端镜像: $FRONTEND_IMAGE"
         docker tag "$FRONTEND_IMAGE" article-frontend:latest
+        FRONTEND_AVAILABLE=true
       else
         echo "⚠️ 前端镜像不存在，跳过前端部署"
+        FRONTEND_AVAILABLE=false
       fi
       
       # 4. 部署应用
@@ -447,8 +451,8 @@ deploy:
         -e SPRING_REDIS_PORT=6379 \
         article-backend:latest
       
-      # 6. 部署前端服务（如果镜像存在）
-      if docker images | grep -q "article-frontend"; then
+      # 6. 部署前端服务（使用明确的状态变量）
+      if [ "$FRONTEND_AVAILABLE" = true ]; then
         echo "🚀 部署前端服务..."
         docker stop article-frontend 2>/dev/null || true
         docker rm article-frontend 2>/dev/null || true
@@ -459,10 +463,13 @@ deploy:
           --network "${DOCKER_NETWORK}" \
           -p ${FRONTEND_PORT}:80 \
           article-frontend:latest
+        echo "✅ 前端服务已启动"
+      else
+        echo "ℹ️ 跳过前端服务部署"
       fi
       
       # 7. 等待应用启动
-      echo "⏳ 等待后端应用启动（最多30秒）..."
+      echo "⏳ 等待后端应用启动..."
       for i in $(seq 1 15); do
         if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then
           echo "✅ 后端应用已完全启动 (${i}秒)"
@@ -480,13 +487,14 @@ deploy:
       echo "📊 容器状态:"
       docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "article-|mysql|redis" || echo "未找到相关容器"
       
-      # 9. API健康检查
+      # 9. 详细的API健康检查（修复curl命令）
       echo "🔍 API健康检查:"
       API_SUCCESS=false
       for attempt in $(seq 1 8); do
         echo "尝试 ${attempt}/8..."
         
-        RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 2>/dev/null || echo "000")
+        # 修复curl命令，移除有问题的2>/dev/null重定向
+        RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 || echo "000")
         
         case "${RESPONSE_CODE}" in
           "200"|"401"|"403"|"404")
@@ -510,21 +518,17 @@ deploy:
         esac
       done
       
-      if [ "${API_SUCCESS}" = true ]; then
-        echo "✅ API基本可用"
-      else
-        echo "⚠️ API检查失败，但部署流程继续完成"
-      fi
-      
       # 10. 前端检查（如果部署了）
-      if docker ps --format "{{.Names}}" | grep -q "^article-frontend$"; then
+      if [ "$FRONTEND_AVAILABLE" = true ] && docker ps --format "{{.Names}}" | grep -q "^article-frontend$"; then
         echo "🔍 前端健康检查:"
-        FRONTEND_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${FRONTEND_PORT}" --max-time 5 2>/dev/null || echo "000")
+        FRONTEND_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${FRONTEND_PORT}" --max-time 5 || echo "000")
         if [ "${FRONTEND_RESPONSE}" = "200" ] || [ "${FRONTEND_RESPONSE}" = "304" ]; then
           echo "✅ 前端服务正常 (HTTP ${FRONTEND_RESPONSE})"
         else
           echo "⚠️ 前端服务响应: HTTP ${FRONTEND_RESPONSE}"
         fi
+      else
+        echo "ℹ️ 前端服务未部署，跳过前端健康检查"
       fi
       
       # 11. 生成最终报告
@@ -534,17 +538,16 @@ deploy:
       echo ""
       echo "📋 服务状态:"
       echo "  后端API: http://localhost:${BACKEND_PORT}/api/articles"
-      echo "  前端界面: http://localhost:${FRONTEND_PORT}"
+      if [ "$FRONTEND_AVAILABLE" = true ]; then
+        echo "  前端界面: http://localhost:${FRONTEND_PORT}"
+      else
+        echo "  前端界面: 未部署"
+      fi
       echo "  MySQL: localhost:3306 (${MYSQL_DATABASE})"
       echo "  Redis: localhost:6379"
       echo ""
       echo "🔧 容器列表:"
       docker ps --filter "name=article-*" --format "  - {{.Names}} ({{.Status}})"
-      echo ""
-      echo "📝 故障排除:"
-      echo "  1. 查看后端日志: docker logs article-backend"
-      echo "  2. 查看前端日志: docker logs article-frontend"
-      echo "  3. 检查数据库: docker exec ${MYSQL_CONTAINER} mysql -uroot -p'${MYSQL_ROOT_PASSWORD}' ${MYSQL_DATABASE} -e 'SHOW TABLES;'"
       echo ""
       echo "✅ CI/CD流水线执行完成"
       BASH_SCRIPT
