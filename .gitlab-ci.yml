@@ -189,7 +189,8 @@ deploy-db:
     - echo "✅ 数据库部署完成"
   tags:
     - docker 
- 
+
+
 # ========== 阶段5：部署应用 ==========
 deploy:
   stage: deploy
