@@ -24,66 +24,37 @@ variables:
   ALIYUN_REGISTRY_USER: "nick1191472774"
   ALIYUN_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD
 
-
 # ========== 阶段0：阿里云测试 ==========
 test-aliyun:
   stage: test-aliyun
-  image: docker:24.0.7  # 添加这一行
+  image: docker:24.0.7
   script:
-    - |
-      # 添加调试信息
-      echo "🔍 调试信息:"
-      echo "用户名: $ALIYUN_REGISTRY_USER"
-      echo "仓库: $DOCKER_REGISTRY"
-      echo "命名空间: $DOCKER_NAMESPACE"
-      echo "密码长度: ${#ALIYUN_REGISTRY_PASSWORD} 字符"
-      
-      # 测试echo到docker login
-      echo "测试密码传递..."
-      echo "密码前4位: ${ALIYUN_REGISTRY_PASSWORD:0:4}****"
-      
-      # 直接测试登录
-      echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+    - echo "🔍 调试信息:"
+    - echo "用户名: $ALIYUN_REGISTRY_USER"
+    - echo "仓库: $DOCKER_REGISTRY"
+    - echo "命名空间: $DOCKER_NAMESPACE"
+    - echo "密码长度: ${#ALIYUN_REGISTRY_PASSWORD} 字符"
+    - echo "测试密码传递..."
+    - echo "密码前4位: ${ALIYUN_REGISTRY_PASSWORD:0:4}****"
+    - echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
 
 # ========== 阶段1：构建后端 ==========
 build-backend:
   stage: build-backend
   image: maven:3.9.8-eclipse-temurin-17
   script:
-    - |
-      echo "🚀 开始构建后端应用..."
-      
-      # 创建Maven阿里云镜像配置
-      mkdir -p ~/.m2
-      cat > ~/.m2/settings.xml << 'EOF'
-      <?xml version="1.0" encoding="UTF-8"?>
-      <settings>
-        <mirrors>
-          <mirror>
-            <id>alimaven</id>
-            <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url>
-            <mirrorOf>central</mirrorOf>
-          </mirror>
-        </mirrors>
-      </settings>
-      EOF
-      
-      echo "📦 进入backend目录编译..."
-      cd backend
-      mvn clean package -DskipTests
-      
-      echo "✅ 后端构建完成"
-      echo "构建产物:"
-      ls -lh target/*.jar
+    - echo "🚀 开始构建后端应用..."
+    - mkdir -p ~/.m2
+    - echo '<?xml version="1.0" encoding="UTF-8"?><settings><mirrors><mirror><id>alimaven</id><name>aliyun maven</name><url>https://maven.aliyun.com/repository/public</url><mirrorOf>central</mirrorOf></mirror></mirrors></settings>' > ~/.m2/settings.xml
+    - cd backend
+    - mvn clean package -DskipTests
+    - echo "✅ 后端构建完成"
+    - echo "构建产物:"
+    - ls -lh target/*.jar
   artifacts:
     paths:
       - backend/target/*.jar
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
 
@@ -92,39 +63,24 @@ build-frontend:
   stage: build-frontend
   image: node:20-alpine
   script:
-    - |
-      echo "🎨 开始构建前端应用..."
-      
-      if [ ! -d "frontend" ]; then
-        echo "⚠️ 前端目录不存在，跳过构建"
-        exit 0
-      fi
-      
-      cd frontend
-      
-      # 设置npm镜像源
-      npm config set registry https://registry.npmmirror.com
-      
-      echo "📦 安装依赖..."
-      npm install --silent
-      
-      echo "🔨 执行构建..."
-      npm run build
-      
-      echo "✅ 前端构建完成"
-      echo "构建产物:"
-      ls -lh dist/
+    - echo "🎨 开始构建前端应用..."
+    - if [ ! -d "frontend" ]; then echo "⚠️ 前端目录不存在，跳过构建"; exit 0; fi
+    - cd frontend
+    - npm config set registry https://registry.npmmirror.com
+    - echo "📦 安装依赖..."
+    - npm install --silent
+    - echo "🔨 执行构建..."
+    - npm run build
+    - echo "✅ 前端构建完成"
+    - echo "构建产物:"
+    - ls -lh dist/
   artifacts:
     paths:
       - frontend/dist/
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
-    
+
 # ========== 阶段3：推送镜像到阿里云仓库 ==========
 push-images:
   stage: push-images
@@ -136,221 +92,75 @@ push-images:
     - apk add --no-cache curl
     - docker --version
   script:
-    - |
-      echo "🚀 开始镜像推送流程..."
-      
-      # 1. 登录阿里云镜像仓库
-      echo "🔐 登录阿里云镜像仓库..."
-      if [ -n "$ALIYUN_REGISTRY_USER" ] && [ -n "$ALIYUN_REGISTRY_PASSWORD" ]; then
-        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
-        if [ $? -eq 0 ]; then
-          echo "✅ 阿里云仓库登录成功"
-        else
-          echo "❌ 阿里云仓库登录失败"
-          exit 1
-        fi
+    # 1. 登录阿里云仓库
+    - echo "🚀 开始镜像推送流程..."
+    - echo "🔐 登录阿里云镜像仓库..."
+    - echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+    - echo "✅ 阿里云仓库登录成功"
+    
+    # 2. 创建后端Dockerfile（使用简单方法）
+    - echo "📦 创建后端Dockerfile..."
+    - echo "FROM eclipse-temurin:17-jre-alpine" > Dockerfile.backend
+    - echo "WORKDIR /app" >> Dockerfile.backend
+    - echo "COPY backend/target/*.jar app.jar" >> Dockerfile.backend
+    - echo "EXPOSE 8080" >> Dockerfile.backend
+    - echo 'ENTRYPOINT ["java", "-jar", "app.jar"]' >> Dockerfile.backend
+    
+    # 3. 构建后端镜像
+    - echo "📦 构建后端镜像..."
+    - BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
+    - LATEST_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
+    - docker build -f Dockerfile.backend -t "$BACKEND_IMAGE_TAG" .
+    - docker tag "$BACKEND_IMAGE_TAG" "$LATEST_TAG"
+    - echo "✅ 后端镜像构建完成"
+    - echo "镜像标签: $BACKEND_IMAGE_TAG"
+    
+    # 4. 推送后端镜像
+    - echo "📤 推送后端镜像..."
+    - docker push "$BACKEND_IMAGE_TAG"
+    - docker push "$LATEST_TAG"
+    - echo "✅ 后端镜像推送完成"
+    
+    # 5. 构建前端镜像（如果存在）
+    - if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
+        echo "📦 构建前端镜像...";
+        echo "FROM nginx:alpine" > frontend/Dockerfile.frontend;
+        echo "COPY dist/ /usr/share/nginx/html" >> frontend/Dockerfile.frontend;
+        echo "EXPOSE 80" >> frontend/Dockerfile.frontend;
+        FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}";
+        FRONTEND_LATEST="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest";
+        docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE_TAG" frontend/;
+        docker tag "$FRONTEND_IMAGE_TAG" "$FRONTEND_LATEST";
+        echo "✅ 前端镜像构建完成";
+        echo "📤 推送前端镜像...";
+        docker push "$FRONTEND_IMAGE_TAG";
+        docker push "$FRONTEND_LATEST";
+        echo "✅ 前端镜像推送完成";
       else
-        echo "❌ 缺少登录凭证"
-        exit 1
+        echo "⚠️ 前端构建产物不存在，跳过前端镜像构建";
       fi
-    - |
-      # 2. 构建并推送后端镜像
-      echo "📦 构建后端镜像..."
-      cat > Dockerfile.backend << 'EOF'
-      FROM eclipse-temurin:17-jre-alpine
-      WORKDIR /app
-      COPY backend/target/*.jar app.jar
-      EXPOSE 8080
-      ENTRYPOINT ["java", "-jar", "app.jar"]
-      EOF
-    - |
-      # 生成镜像标签
-      BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
-      LATEST_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
-      
-      docker build -f Dockerfile.backend -t "$BACKEND_IMAGE_TAG" .
-      docker tag "$BACKEND_IMAGE_TAG" "$LATEST_TAG"
-      
-      echo "✅ 后端镜像构建完成"
-      echo "镜像标签: $BACKEND_IMAGE_TAG"
-    - |
-      # 3. 推送后端镜像
-      echo "📤 推送后端镜像..."
-      docker push "$BACKEND_IMAGE_TAG"
-      docker push "$LATEST_TAG"
-      echo "✅ 后端镜像推送完成"
-    - |
-      # 4. 构建并推送前端镜像（如果存在）
-      if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
-        echo "📦 构建前端镜像..."
-        
-        cat > frontend/Dockerfile.frontend << 'EOF'
-        FROM nginx:alpine
-        COPY dist/ /usr/share/nginx/html
-        EXPOSE 80
-        EOF
-        
-        # 生成前端镜像标签
-        FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
-        FRONTEND_LATEST="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
-        
-        docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE_TAG" frontend/
-        docker tag "$FRONTEND_IMAGE_TAG" "$FRONTEND_LATEST"
-        
-        echo "✅ 前端镜像构建完成"
-        
-        # 推送前端镜像
-        echo "📤 推送前端镜像..."
-        docker push "$FRONTEND_IMAGE_TAG"
-        docker push "$FRONTEND_LATEST"
-        echo "✅ 前端镜像推送完成"
+    
+    # 6. 验证推送
+    - echo "🔍 验证镜像推送..."
+    - docker pull "$BACKEND_IMAGE_TAG"
+    - echo "✅ 后端镜像验证成功"
+    
+    # 7. 生成报告
+    - echo ""
+    - echo "========== 镜像推送报告 =========="
+    - echo "✅ 推送成功的镜像:"
+    - docker images | grep "$DOCKER_REGISTRY/$DOCKER_NAMESPACE" || echo "无相关镜像"
+    - echo ""
+    - echo "🔗 镜像地址:"
+    - echo "后端: $BACKEND_IMAGE_TAG"
+    - if [ -n "${FRONTEND_IMAGE_TAG:-}" ]; then
+        echo "前端: ${FRONTEND_IMAGE_TAG}";
       else
-        echo "⚠️ 前端构建产物不存在，跳过前端镜像构建"
+        echo "前端: 未构建";
       fi
-    - |
-      # 5. 验证镜像推送
-      echo "🔍 验证镜像推送..."
-      if docker pull "$BACKEND_IMAGE_TAG"; then
-        echo "✅ 后端镜像验证成功"
-      else
-        echo "❌ 后端镜像验证失败"
-        exit 1
-      fi
-    - |
-      # 6. 生成镜像报告
-      echo ""
-      echo "========== 镜像推送报告 =========="
-      echo "✅ 推送成功的镜像:"
-      docker images | grep "$DOCKER_REGISTRY/$DOCKER_NAMESPACE" || echo "无相关镜像"
-      
-      echo ""
-      echo "🔗 镜像地址:"
-      echo "后端: $BACKEND_IMAGE_TAG"
-      if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
-        echo "前端: ${FRONTEND_IMAGE_TAG}"
-      else
-        echo "前端: 未构建"
-      fi
-      
-      echo "✅ 镜像推送阶段完成"
-  only:
-    - feature/initial-commit
-    - main
-    - develop
+    - echo "✅ 镜像推送阶段完成"
   tags:
     - docker
-
-# ========== 阶段3：推送镜像到阿里云仓库 ==========
-# push-images:
-#   stage: push-images
-#   image: docker:24.0.7
-#   needs:
-#     - build-backend
-#     - build-frontend
-#   before_script:
-#     - apk add --no-cache curl
-#     - docker --version
-#   script:
-#     - |
-#       echo "🚀 开始镜像推送流程..."
-      
-#       # 1. 登录阿里云镜像仓库
-#       echo "🔐 登录阿里云镜像仓库..."
-#       if [ -n "$ALIYUN_REGISTRY_USER" ] && [ -n "$ALIYUN_REGISTRY_PASSWORD" ]; then
-#         echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
-#         if [ $? -eq 0 ]; then
-#           echo "✅ 阿里云仓库登录成功"
-#         else
-#           echo "❌ 阿里云仓库登录失败"
-#           exit 1
-#         fi
-#       else
-#         echo "❌ 缺少登录凭证"
-#         exit 1
-#       fi
-      
-#       # 2. 构建并推送后端镜像
-#       echo "📦 构建后端镜像..."
-#       cat > Dockerfile.backend << 'EOF'
-#       FROM eclipse-temurin:17-jre-alpine
-#       WORKDIR /app
-#       COPY backend/target/*.jar app.jar
-#       EXPOSE 8080
-#       ENTRYPOINT ["java", "-jar", "app.jar"]
-#       EOF
-      
-#       # 生成镜像标签
-#       BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
-#       LATEST_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
-      
-#       docker build -f Dockerfile.backend -t "$BACKEND_IMAGE_TAG" .
-#       docker tag "$BACKEND_IMAGE_TAG" "$LATEST_TAG"
-      
-#       echo "✅ 后端镜像构建完成"
-#       echo "镜像标签: $BACKEND_IMAGE_TAG"
-      
-#       # 3. 推送后端镜像
-#       echo "📤 推送后端镜像..."
-#       docker push "$BACKEND_IMAGE_TAG"
-#       docker push "$LATEST_TAG"
-#       echo "✅ 后端镜像推送完成"
-      
-#       # 4. 构建并推送前端镜像（如果存在）
-#       if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
-#         echo "📦 构建前端镜像..."
-        
-#         cat > frontend/Dockerfile.frontend << 'EOF'
-#         FROM nginx:alpine
-#         COPY dist/ /usr/share/nginx/html
-#         EXPOSE 80
-#         EOF
-        
-#         # 生成前端镜像标签
-#         FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
-#         FRONTEND_LATEST="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
-        
-#         docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE_TAG" frontend/
-#         docker tag "$FRONTEND_IMAGE_TAG" "$FRONTEND_LATEST"
-        
-#         echo "✅ 前端镜像构建完成"
-        
-#         # 推送前端镜像
-#         echo "📤 推送前端镜像..."
-#         docker push "$FRONTEND_IMAGE_TAG"
-#         docker push "$FRONTEND_LATEST"
-#         echo "✅ 前端镜像推送完成"
-#       else
-#         echo "⚠️ 前端构建产物不存在，跳过前端镜像构建"
-#       fi
-      
-#       # 5. 验证镜像推送
-#       echo "🔍 验证镜像推送..."
-#       if docker pull "$BACKEND_IMAGE_TAG"; then
-#         echo "✅ 后端镜像验证成功"
-#       else
-#         echo "❌ 后端镜像验证失败"
-#         exit 1
-#       fi
-      
-#       # 6. 生成镜像报告
-#       echo ""
-#       echo "========== 镜像推送报告 =========="
-#       echo "✅ 推送成功的镜像:"
-#       docker images | grep "$DOCKER_REGISTRY/$DOCKER_NAMESPACE" || echo "无相关镜像"
-      
-#       echo ""
-#       echo "🔗 镜像地址:"
-#       echo "后端: $BACKEND_IMAGE_TAG"
-#       echo "前端: ${FRONTEND_IMAGE_TAG:-未构建}"
-      
-#       echo "✅ 镜像推送阶段完成"
-      
-#   only:
-#     - feature/initial-commit
-#     - main
-#     - develop
-#   tags:
-#     - docker
 
 # ========== 阶段4：部署数据库 ==========
 deploy-db:
@@ -359,330 +169,51 @@ deploy-db:
   before_script:
     - apk add --no-cache bash coreutils curl
   script:
-    - |
-      exec bash << 'BASH_SCRIPT'
-      set -euo pipefail
-      
-      echo "========== 数据库服务部署 =========="
-      
-      # 1. 创建专用网络
-      echo "🔧 创建Docker网络..."
-      if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then
-        docker network create "${DOCKER_NETWORK}"
-        echo "✅ 网络创建: ${DOCKER_NETWORK}"
-      else
-        echo "✅ 网络已存在: ${DOCKER_NETWORK}"
-      fi
-      
-      # 2. 部署MySQL容器
-      echo "🐬 部署MySQL..."
-      if docker ps --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
-        echo "✅ MySQL容器已在运行"
-      elif docker ps -a --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
-        echo "🔄 重启已存在的MySQL容器"
-        docker start "${MYSQL_CONTAINER}"
-      else
-        echo "🚀 创建新的MySQL容器"
-        docker run -d \
-          --name "${MYSQL_CONTAINER}" \
-          --restart unless-stopped \
-          --network "${DOCKER_NETWORK}" \
-          -p 3306:3306 \
-          -e MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
-          -e MYSQL_DATABASE="${MYSQL_DATABASE}" \
-          -v mysqlvar/lib/mysql \
-          mysql:8.0 \
-          --default-authentication-plugin=mysql_native_password \
-          --character-set-server=utf8mb4 \
-          --collation-server=utf8mb4_unicode_ci
-      fi
-      
-      # 3. 等待MySQL启动完成
-      echo "⏳ 等待MySQL启动（最多60秒）..."
-      for i in $(seq 1 30); do
-        if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
-          echo "✅ MySQL已就绪 (${i}秒)"
-          break
-        fi
-        if [ $i -eq 30 ]; then
-          echo "❌ MySQL启动超时"
-          docker logs "${MYSQL_CONTAINER}" --tail 20
-          exit 1
-        fi
-        echo "等待中... (${i}/30)"
-        sleep 2
-      done
-      
-      # 4. 数据库初始化
-      echo "📁 检查并导入SQL文件..."
-      SQL_FILE="mysql/init/article_db.sql"
-      
-      if [ -f "${SQL_FILE}" ]; then
-        echo "✅ 找到SQL文件: ${SQL_FILE}"
-        echo "文件信息:"
-        wc -l "${SQL_FILE}"
-        
-        # 确保数据库存在
-        docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
-          -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-        
-        # 导入SQL文件
-        echo "正在导入SQL文件..."
-        docker exec -i "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
-          "${MYSQL_DATABASE}" < "${SQL_FILE}"
-        
-        if [ $? -eq 0 ]; then
-          echo "✅ SQL文件导入成功"
-        else
-          echo "❌ SQL文件导入失败"
-          exit 1
-        fi
-      else
-        echo "⚠️ 警告：未找到SQL文件: ${SQL_FILE}"
-        echo "将创建空数据库，后端可能需要自动建表或手动初始化"
-        docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
-          -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-      fi
-      
-      # 5. 验证数据库状态
-      echo "🔍 验证数据库状态..."
-      docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
-        "${MYSQL_DATABASE}" -e "
-        SHOW TABLES;
-        SELECT COUNT(*) as '表数量' FROM information_schema.tables WHERE table_schema = '${MYSQL_DATABASE}';
-      " 2>/dev/null || {
-        echo "数据库查询可能失败，但继续执行"
-      }
-      
-      # 6. 部署Redis
-      echo "🟥 部署Redis..."
-      if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
-        echo "✅ Redis容器已在运行"
-      elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
-        echo "🔄 重启已存在的Redis容器"
-        docker start "${REDIS_CONTAINER}"
-      else
-        echo "🚀 创建新的Redis容器"
-        docker run -d \
-          --name "${REDIS_CONTAINER}" \
-          --restart unless-stopped \
-          --network "${DOCKER_NETWORK}" \
-          -p 6379:6379 \
-          -v redis-data:/data \
-          redis:alpine \
-          redis-server \
-          --maxmemory 512mb \
-          --maxmemory-policy allkeys-lru \
-          --appendonly yes
-      fi
-      
-      # 7. 等待Redis启动
-      echo "⏳ 等待Redis启动..."
-      for i in $(seq 1 20); do
-        if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
-          echo "✅ Redis已就绪 (${i}秒)"
-          break
-        fi
-        if [ $i -eq 20 ]; then
-          echo "❌ Redis启动超时"
-          docker logs "${REDIS_CONTAINER}" --tail 10
-          exit 1
-        fi
-        echo "等待中... (${i}/20)"
-        sleep 1
-      done
-      
-      # 8. 生成部署报告
-      echo ""
-      echo "========== 数据库部署报告 =========="
-      echo "✅ MySQL:"
-      echo "   容器: ${MYSQL_CONTAINER}"
-      echo "   数据库: ${MYSQL_DATABASE}"
-      echo "   端口: 3306"
-      
-      echo ""
-      echo "✅ Redis:"
-      echo "   容器: ${REDIS_CONTAINER}"
-      echo "   端口: 6379"
-      
-      echo ""
-      echo "🔗 网络连接:"
-      docker network inspect "${DOCKER_NETWORK}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "无法获取网络信息"
-      
-      echo ""
-      echo "========== 数据库部署完成 =========="
-      BASH_SCRIPT
-  only:
-    - feature/initial-commit
-    - main
-    - develop
+    # 简单直接的写法，不用复杂结构
+    - echo "========== 数据库服务部署 =========="
+    - echo "🔧 创建Docker网络..."
+    - if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then docker network create "${DOCKER_NETWORK}"; echo "✅ 网络创建: ${DOCKER_NETWORK}"; else echo "✅ 网络已存在: ${DOCKER_NETWORK}"; fi
+    - echo "🐬 部署MySQL..."
+    - if docker ps --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then echo "✅ MySQL容器已在运行"; elif docker ps -a --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then echo "🔄 重启已存在的MySQL容器"; docker start "${MYSQL_CONTAINER}"; else echo "🚀 创建新的MySQL容器"; docker run -d --name "${MYSQL_CONTAINER}" --restart unless-stopped --network "${DOCKER_NETWORK}" -p 3306:3306 -e MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" -e MYSQL_DATABASE="${MYSQL_DATABASE}" -v mysqlvar/lib/mysql mysql:8.0 --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci; fi
+    - echo "⏳ 等待MySQL启动..."
+    - for i in $(seq 1 30); do if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then echo "✅ MySQL已就绪 (${i}秒)"; break; fi; if [ $i -eq 30 ]; then echo "❌ MySQL启动超时"; exit 1; fi; echo "等待中... (${i}/30)"; sleep 2; done
+    - echo "📁 检查并导入SQL文件..."
+    - SQL_FILE="mysql/init/article_db.sql"
+    - if [ -f "${SQL_FILE}" ]; then echo "✅ 找到SQL文件: ${SQL_FILE}"; docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; docker exec -i "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SQL_FILE}" && echo "✅ SQL文件导入成功" || echo "❌ SQL文件导入失败"; else echo "⚠️ 警告：未找到SQL文件，将创建空数据库"; docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; fi
+    - echo "🟥 部署Redis..."
+    - if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then echo "✅ Redis容器已在运行"; elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then echo "🔄 重启已存在的Redis容器"; docker start "${REDIS_CONTAINER}"; else echo "🚀 创建新的Redis容器"; docker run -d --name "${REDIS_CONTAINER}" --restart unless-stopped --network "${DOCKER_NETWORK}" -p 6379:6379 -v redis-data:/data redis:alpine redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes; fi
+    - echo "⏳ 等待Redis启动..."
+    - for i in $(seq 1 20); do if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then echo "✅ Redis已就绪 (${i}秒)"; break; fi; if [ $i -eq 20 ]; then echo "❌ Redis启动超时"; exit 1; fi; echo "等待中... (${i}/20)"; sleep 1; done
+    - echo "✅ 数据库部署完成"
   tags:
     - docker
 
-# ========== 阶段5：部署应用（从阿里云仓库拉取镜像） ==========
+# ========== 阶段5：部署应用 ==========
 deploy:
   stage: deploy
   image: docker:24.0.7
-  needs: 
+  needs:
     - push-images
     - deploy-db
   before_script:
     - apk add --no-cache bash coreutils curl
   script:
-    - |
-      exec bash << 'BASH_SCRIPT'
-      set -euo pipefail
-      
-      echo "========== 从阿里云仓库拉取镜像并部署 =========="
-      
-      # 1. 登录阿里云镜像仓库
-      if [ -n "$ALIYUN_REGISTRY_USER" ] && [ -n "$ALIYUN_REGISTRY_PASSWORD" ]; then
-        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
-      fi
-      
-      # 2. 拉取后端镜像
-      BACKEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
-      echo "📥 拉取后端镜像: $BACKEND_IMAGE"
-      docker pull "$BACKEND_IMAGE"
-      docker tag "$BACKEND_IMAGE" article-backend:latest
-      
-      # 3. 拉取前端镜像（如果存在）
-      FRONTEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
-      if docker pull "$FRONTEND_IMAGE" 2>/dev/null; then
-        echo "📥 拉取前端镜像: $FRONTEND_IMAGE"
-        docker tag "$FRONTEND_IMAGE" article-frontend:latest
-      else
-        echo "⚠️ 前端镜像不存在，跳过前端部署"
-      fi
-      
-      # 4. 部署应用
-      echo "🔧 创建Docker网络..."
-      if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then
-        docker network create "${DOCKER_NETWORK}"
-      fi
-      
-      # 5. 部署后端服务
-      echo "🚀 部署后端服务..."
-      docker stop article-backend 2>/dev/null || true
-      docker rm article-backend 2>/dev/null || true
-      
-      docker run -d \
-        --name article-backend \
-        --restart unless-stopped \
-        --network "${DOCKER_NETWORK}" \
-        -p ${BACKEND_PORT}:8080 \
-        -e SPRING_PROFILES_ACTIVE=prod \
-        -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai" \
-        -e SPRING_DATASOURCE_USERNAME=root \
-        -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
-        -e SPRING_REDIS_HOST="${REDIS_CONTAINER}" \
-        -e SPRING_REDIS_PORT=6379 \
-        article-backend:latest
-      
-      # 6. 部署前端服务（如果镜像存在）
-      if docker images | grep -q "article-frontend"; then
-        echo "🚀 部署前端服务..."
-        docker stop article-frontend 2>/dev/null || true
-        docker rm article-frontend 2>/dev/null || true
-        
-        docker run -d \
-          --name article-frontend \
-          --restart unless-stopped \
-          --network "${DOCKER_NETWORK}" \
-          -p ${FRONTEND_PORT}:80 \
-          article-frontend:latest
-      fi
-      
-      # 7. 等待应用启动
-      echo "⏳ 等待后端应用启动（最多30秒）..."
-      for i in $(seq 1 15); do
-        if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then
-          echo "✅ 后端应用已完全启动 (${i}秒)"
-          break
-        fi
-        if [ $i -eq 10 ]; then
-          echo "⚠️ 应用启动较慢，继续等待..."
-        fi
-        echo "等待中... (${i}/15)"
-        sleep 2
-      done
-      
-      # 8. 健康检查
-      echo "🧪 健康检查..."
-      echo "📊 容器状态:"
-      docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "article-|mysql|redis" || echo "未找到相关容器"
-      
-      # 9. API健康检查
-      echo "🔍 API健康检查:"
-      API_SUCCESS=false
-      for attempt in $(seq 1 8); do
-        echo "尝试 ${attempt}/8..."
-        
-        RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 2>/dev/null || echo "000")
-        
-        case "${RESPONSE_CODE}" in
-          "200"|"401"|"403"|"404")
-            echo "✅ API响应正常 (HTTP ${RESPONSE_CODE})"
-            API_SUCCESS=true
-            break
-            ;;
-          "500")
-            echo "❌ 服务器内部错误 (HTTP 500)"
-            docker logs article-backend --tail 30
-            break
-            ;;
-          "000")
-            echo "⏳ API无响应，等待重试..."
-            sleep 3
-            ;;
-          *)
-            echo "⚠️ 未知响应: HTTP ${RESPONSE_CODE}"
-            sleep 2
-            ;;
-        esac
-      done
-      
-      if [ "${API_SUCCESS}" = true ]; then
-        echo "✅ API基本可用"
-      else
-        echo "⚠️ API检查失败，但部署流程继续完成"
-      fi
-      
-      # 10. 前端检查（如果部署了）
-      if docker ps --format "{{.Names}}" | grep -q "^article-frontend$"; then
-        echo "🔍 前端健康检查:"
-        FRONTEND_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${FRONTEND_PORT}" --max-time 5 2>/dev/null || echo "000")
-        if [ "${FRONTEND_RESPONSE}" = "200" ] || [ "${FRONTEND_RESPONSE}" = "304" ]; then
-          echo "✅ 前端服务正常 (HTTP ${FRONTEND_RESPONSE})"
-        else
-          echo "⚠️ 前端服务响应: HTTP ${FRONTEND_RESPONSE}"
-        fi
-      fi
-      
-      # 11. 生成最终报告
-      echo ""
-      echo "========== 部署完成报告 =========="
-      echo "🎉 部署流程完成!"
-      echo ""
-      echo "📋 服务状态:"
-      echo "  后端API: http://localhost:${BACKEND_PORT}/api/articles"
-      echo "  前端界面: http://localhost:${FRONTEND_PORT}"
-      echo "  MySQL: localhost:3306 (${MYSQL_DATABASE})"
-      echo "  Redis: localhost:6379"
-      echo ""
-      echo "🔧 容器列表:"
-      docker ps --filter "name=article-*" --format "  - {{.Names}} ({{.Status}})"
-      echo ""
-      echo "📝 故障排除:"
-      echo "  1. 查看后端日志: docker logs article-backend"
-      echo "  2. 查看前端日志: docker logs article-frontend"
-      echo "  3. 检查数据库: docker exec ${MYSQL_CONTAINER} mysql -uroot -p'${MYSQL_ROOT_PASSWORD}' ${MYSQL_DATABASE} -e 'SHOW TABLES;'"
-      echo ""
-      echo "✅ CI/CD流水线执行完成"
-      BASH_SCRIPT
-  only:
-    - feature/initial-commit
-    - main
-    - develop
+    # 最简化的部署脚本
+    - echo "========== 从阿里云仓库拉取镜像并部署 =========="
+    - echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+    - BACKEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
+    - echo "📥 拉取后端镜像: $BACKEND_IMAGE"
+    - docker pull "$BACKEND_IMAGE"
+    - docker tag "$BACKEND_IMAGE" article-backend:latest
+    - if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then docker network create "${DOCKER_NETWORK}"; fi
+    - echo "🚀 部署后端服务..."
+    - docker stop article-backend 2>/dev/null || true
+    - docker rm article-backend 2>/dev/null || true
+    - docker run -d --name article-backend --restart unless-stopped --network "${DOCKER_NETWORK}" -p ${BACKEND_PORT}:8080 -e SPRING_PROFILES_ACTIVE=prod -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai" -e SPRING_DATASOURCE_USERNAME=root -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" -e SPRING_REDIS_HOST="${REDIS_CONTAINER}" -e SPRING_REDIS_PORT=6379 article-backend:latest
+    - echo "⏳ 等待后端应用启动..."
+    - for i in $(seq 1 20); do if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then echo "✅ 后端应用已完全启动 (${i}秒)"; break; fi; echo "等待中... (${i}/20)"; sleep 3; done
+    - echo "🧪 健康检查..."
+    - curl -s -o /dev/null -w "HTTP状态码: %{http_code}\n" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 || echo "健康检查超时"
+    - echo "✅ 部署完成"
   tags:
     - docker
