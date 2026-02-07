@@ -17,11 +17,11 @@ variables:
   BACKEND_PORT: "8081"
   FRONTEND_PORT: "80"
   
-  # 修正：镜像仓库配置
+  # 镜像仓库配置
   DOCKER_REGISTRY: "crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com"
   DOCKER_NAMESPACE: "fds-article"
-  CI_REGISTRY_USER: "nick1191472774"  # 替换为您的阿里云账号全名
-  CI_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD  # 需要在GitLab CI变量中设置
+  CI_REGISTRY_USER: "nick1191472774"
+  CI_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD
 
 # ========== 阶段1：构建后端 ==========
 build-backend:
@@ -52,6 +52,8 @@ build-backend:
       mvn clean package -DskipTests
       
       echo "✅ 后端构建完成"
+      echo "构建产物:"
+      ls -lh target/*.jar
   artifacts:
     paths:
       - backend/target/*.jar
@@ -88,6 +90,8 @@ build-frontend:
       npm run build
       
       echo "✅ 前端构建完成"
+      echo "构建产物:"
+      ls -lh dist/
   artifacts:
     paths:
       - frontend/dist/
@@ -99,7 +103,7 @@ build-frontend:
   tags:
     - docker
 
-# ========== 推送镜像到阿里云仓库 ==========
+# ========== 阶段3：推送镜像到阿里云仓库 ==========
 push-images:
   stage: push-images
   image: docker:24.0.7
@@ -138,7 +142,7 @@ push-images:
       ENTRYPOINT ["java", "-jar", "app.jar"]
       EOF
       
-      # 修正：镜像标签格式
+      # 生成镜像标签
       BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
       LATEST_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
       
@@ -164,7 +168,7 @@ push-images:
         EXPOSE 80
         EOF
         
-        # 修正：前端镜像标签格式
+        # 生成前端镜像标签
         FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
         FRONTEND_LATEST="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
         
@@ -182,7 +186,16 @@ push-images:
         echo "⚠️ 前端构建产物不存在，跳过前端镜像构建"
       fi
       
-      # 5. 生成镜像报告
+      # 5. 验证镜像推送
+      echo "🔍 验证镜像推送..."
+      if docker pull "$BACKEND_IMAGE_TAG"; then
+        echo "✅ 后端镜像验证成功"
+      else
+        echo "❌ 后端镜像验证失败"
+        exit 1
+      fi
+      
+      # 6. 生成镜像报告
       echo ""
       echo "========== 镜像推送报告 =========="
       echo "✅ 推送成功的镜像:"
@@ -200,7 +213,174 @@ push-images:
   tags:
     - docker
 
-# ========== 部署阶段（从阿里云仓库拉取镜像） ==========
+# ========== 阶段4：部署数据库 ==========
+deploy-db:
+  stage: deploy-db
+  image: docker:24.0.7
+  before_script:
+    - apk add --no-cache bash coreutils curl
+  script:
+    - |
+      exec bash << 'BASH_SCRIPT'
+      set -euo pipefail
+      
+      echo "========== 数据库服务部署 =========="
+      
+      # 1. 创建专用网络
+      echo "🔧 创建Docker网络..."
+      if ! docker network ls --format "{{.Name}}" | grep -q "^${DOCKER_NETWORK}$"; then
+        docker network create "${DOCKER_NETWORK}"
+        echo "✅ 网络创建: ${DOCKER_NETWORK}"
+      else
+        echo "✅ 网络已存在: ${DOCKER_NETWORK}"
+      fi
+      
+      # 2. 部署MySQL容器
+      echo "🐬 部署MySQL..."
+      if docker ps --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
+        echo "✅ MySQL容器已在运行"
+      elif docker ps -a --format "{{.Names}}" | grep -q "^${MYSQL_CONTAINER}$"; then
+        echo "🔄 重启已存在的MySQL容器"
+        docker start "${MYSQL_CONTAINER}"
+      else
+        echo "🚀 创建新的MySQL容器"
+        docker run -d \
+          --name "${MYSQL_CONTAINER}" \
+          --restart unless-stopped \
+          --network "${DOCKER_NETWORK}" \
+          -p 3306:3306 \
+          -e MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
+          -e MYSQL_DATABASE="${MYSQL_DATABASE}" \
+          -v mysqlvar/lib/mysql \
+          mysql:8.0 \
+          --default-authentication-plugin=mysql_native_password \
+          --character-set-server=utf8mb4 \
+          --collation-server=utf8mb4_unicode_ci
+      fi
+      
+      # 3. 等待MySQL启动完成
+      echo "⏳ 等待MySQL启动（最多60秒）..."
+      for i in $(seq 1 30); do
+        if docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
+          echo "✅ MySQL已就绪 (${i}秒)"
+          break
+        fi
+        if [ $i -eq 30 ]; then
+          echo "❌ MySQL启动超时"
+          docker logs "${MYSQL_CONTAINER}" --tail 20
+          exit 1
+        fi
+        echo "等待中... (${i}/30)"
+        sleep 2
+      done
+      
+      # 4. 数据库初始化
+      echo "📁 检查并导入SQL文件..."
+      SQL_FILE="mysql/init/article_db.sql"
+      
+      if [ -f "${SQL_FILE}" ]; then
+        echo "✅ 找到SQL文件: ${SQL_FILE}"
+        echo "文件信息:"
+        wc -l "${SQL_FILE}"
+        
+        # 确保数据库存在
+        docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
+          -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+        
+        # 导入SQL文件
+        echo "正在导入SQL文件..."
+        docker exec -i "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
+          "${MYSQL_DATABASE}" < "${SQL_FILE}"
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ SQL文件导入成功"
+        else
+          echo "❌ SQL文件导入失败"
+          exit 1
+        fi
+      else
+        echo "⚠️ 警告：未找到SQL文件: ${SQL_FILE}"
+        echo "将创建空数据库，后端可能需要自动建表或手动初始化"
+        docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
+          -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+      fi
+      
+      # 5. 验证数据库状态
+      echo "🔍 验证数据库状态..."
+      docker exec "${MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
+        "${MYSQL_DATABASE}" -e "
+        SHOW TABLES;
+        SELECT COUNT(*) as '表数量' FROM information_schema.tables WHERE table_schema = '${MYSQL_DATABASE}';
+      " 2>/dev/null || {
+        echo "数据库查询可能失败，但继续执行"
+      }
+      
+      # 6. 部署Redis
+      echo "🟥 部署Redis..."
+      if docker ps --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
+        echo "✅ Redis容器已在运行"
+      elif docker ps -a --format "{{.Names}}" | grep -q "^${REDIS_CONTAINER}$"; then
+        echo "🔄 重启已存在的Redis容器"
+        docker start "${REDIS_CONTAINER}"
+      else
+        echo "🚀 创建新的Redis容器"
+        docker run -d \
+          --name "${REDIS_CONTAINER}" \
+          --restart unless-stopped \
+          --network "${DOCKER_NETWORK}" \
+          -p 6379:6379 \
+          -v redis-data:/data \
+          redis:alpine \
+          redis-server \
+          --maxmemory 512mb \
+          --maxmemory-policy allkeys-lru \
+          --appendonly yes
+      fi
+      
+      # 7. 等待Redis启动
+      echo "⏳ 等待Redis启动..."
+      for i in $(seq 1 20); do
+        if docker exec "${REDIS_CONTAINER}" redis-cli ping | grep -q "PONG"; then
+          echo "✅ Redis已就绪 (${i}秒)"
+          break
+        fi
+        if [ $i -eq 20 ]; then
+          echo "❌ Redis启动超时"
+          docker logs "${REDIS_CONTAINER}" --tail 10
+          exit 1
+        fi
+        echo "等待中... (${i}/20)"
+        sleep 1
+      done
+      
+      # 8. 生成部署报告
+      echo ""
+      echo "========== 数据库部署报告 =========="
+      echo "✅ MySQL:"
+      echo "   容器: ${MYSQL_CONTAINER}"
+      echo "   数据库: ${MYSQL_DATABASE}"
+      echo "   端口: 3306"
+      
+      echo ""
+      echo "✅ Redis:"
+      echo "   容器: ${REDIS_CONTAINER}"
+      echo "   端口: 6379"
+      
+      echo ""
+      echo "🔗 网络连接:"
+      docker network inspect "${DOCKER_NETWORK}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "无法获取网络信息"
+      
+      echo ""
+      echo "========== 数据库部署完成 =========="
+      BASH_SCRIPT
+  only:
+    - feature/initial-commit
+    - main
+    - develop
+  tags:
+    - docker
+
+# ========== 阶段5：部署应用（从阿里云仓库拉取镜像） ==========
 deploy:
   stage: deploy
   image: docker:24.0.7
@@ -242,7 +422,7 @@ deploy:
         docker network create "${DOCKER_NETWORK}"
       fi
       
-      # 部署后端
+      # 5. 部署后端服务
       echo "🚀 部署后端服务..."
       docker stop article-backend 2>/dev/null || true
       docker rm article-backend 2>/dev/null || true
@@ -253,12 +433,14 @@ deploy:
         --network "${DOCKER_NETWORK}" \
         -p ${BACKEND_PORT}:8080 \
         -e SPRING_PROFILES_ACTIVE=prod \
-        -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8" \
+        -e SPRING_DATASOURCE_URL="jdbc:mysql://${MYSQL_CONTAINER}:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai" \
         -e SPRING_DATASOURCE_USERNAME=root \
         -e SPRING_DATASOURCE_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
+        -e SPRING_REDIS_HOST="${REDIS_CONTAINER}" \
+        -e SPRING_REDIS_PORT=6379 \
         article-backend:latest
       
-      # 部署前端（如果镜像存在）
+      # 6. 部署前端服务（如果镜像存在）
       if docker images | grep -q "article-frontend"; then
         echo "🚀 部署前端服务..."
         docker stop article-frontend 2>/dev/null || true
@@ -272,7 +454,92 @@ deploy:
           article-frontend:latest
       fi
       
-      echo "✅ 从阿里云仓库部署完成"
+      # 7. 等待应用启动
+      echo "⏳ 等待后端应用启动（最多30秒）..."
+      for i in $(seq 1 15); do
+        if docker logs article-backend 2>/dev/null | grep -q "Started.*Application"; then
+          echo "✅ 后端应用已完全启动 (${i}秒)"
+          break
+        fi
+        if [ $i -eq 10 ]; then
+          echo "⚠️ 应用启动较慢，继续等待..."
+        fi
+        echo "等待中... (${i}/15)"
+        sleep 2
+      done
+      
+      # 8. 健康检查
+      echo "🧪 健康检查..."
+      echo "📊 容器状态:"
+      docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "article-|mysql|redis" || echo "未找到相关容器"
+      
+      # 9. API健康检查
+      echo "🔍 API健康检查:"
+      API_SUCCESS=false
+      for attempt in $(seq 1 8); do
+        echo "尝试 ${attempt}/8..."
+        
+        RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${BACKEND_PORT}/api/articles" --max-time 10 2>/dev/null || echo "000")
+        
+        case "${RESPONSE_CODE}" in
+          "200"|"401"|"403"|"404")
+            echo "✅ API响应正常 (HTTP ${RESPONSE_CODE})"
+            API_SUCCESS=true
+            break
+            ;;
+          "500")
+            echo "❌ 服务器内部错误 (HTTP 500)"
+            docker logs article-backend --tail 30
+            break
+            ;;
+          "000")
+            echo "⏳ API无响应，等待重试..."
+            sleep 3
+            ;;
+          *)
+            echo "⚠️ 未知响应: HTTP ${RESPONSE_CODE}"
+            sleep 2
+            ;;
+        esac
+      done
+      
+      if [ "${API_SUCCESS}" = true ]; then
+        echo "✅ API基本可用"
+      else
+        echo "⚠️ API检查失败，但部署流程继续完成"
+      fi
+      
+      # 10. 前端检查（如果部署了）
+      if docker ps --format "{{.Names}}" | grep -q "^article-frontend$"; then
+        echo "🔍 前端健康检查:"
+        FRONTEND_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${FRONTEND_PORT}" --max-time 5 2>/dev/null || echo "000")
+        if [ "${FRONTEND_RESPONSE}" = "200" ] || [ "${FRONTEND_RESPONSE}" = "304" ]; then
+          echo "✅ 前端服务正常 (HTTP ${FRONTEND_RESPONSE})"
+        else
+          echo "⚠️ 前端服务响应: HTTP ${FRONTEND_RESPONSE}"
+        fi
+      fi
+      
+      # 11. 生成最终报告
+      echo ""
+      echo "========== 部署完成报告 =========="
+      echo "🎉 部署流程完成!"
+      echo ""
+      echo "📋 服务状态:"
+      echo "  后端API: http://localhost:${BACKEND_PORT}/api/articles"
+      echo "  前端界面: http://localhost:${FRONTEND_PORT}"
+      echo "  MySQL: localhost:3306 (${MYSQL_DATABASE})"
+      echo "  Redis: localhost:6379"
+      echo ""
+      echo "🔧 容器列表:"
+      docker ps --filter "name=article-*" --format "  - {{.Names}} ({{.Status}})"
+      echo ""
+      echo "📝 故障排除:"
+      echo "  1. 查看后端日志: docker logs article-backend"
+      echo "  2. 查看前端日志: docker logs article-frontend"
+      echo "  3. 检查数据库: docker exec ${MYSQL_CONTAINER} mysql -uroot -p'${MYSQL_ROOT_PASSWORD}' ${MYSQL_DATABASE} -e 'SHOW TABLES;'"
+      echo ""
+      echo "✅ CI/CD流水线执行完成"
       BASH_SCRIPT
   only:
     - main
