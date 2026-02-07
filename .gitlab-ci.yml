@@ -20,7 +20,7 @@ variables:
   # 镜像仓库配置
   DOCKER_REGISTRY: "crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com"
   DOCKER_NAMESPACE: "fds-article"
-  CI_REGISTRY_USER: "nick1191472774"
+  ALIYUN_REGISTRY_USER: "nick1191472774"
   CI_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD
 
 # ========== 阶段1：构建后端 ==========
@@ -119,8 +119,8 @@ push-images:
       
       # 1. 登录阿里云镜像仓库
       echo "🔐 登录阿里云镜像仓库..."
-      if [ -n "$CI_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
-        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+      if [ -n "$ALIYUN_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
         if [ $? -eq 0 ]; then
           echo "✅ 阿里云仓库登录成功"
         else
@@ -398,8 +398,8 @@ deploy:
       echo "========== 从阿里云仓库拉取镜像并部署 =========="
       
       # 1. 登录阿里云镜像仓库
-      if [ -n "$CI_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
-        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+      if [ -n "$ALIYUN_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
       fi
       
       # 2. 拉取后端镜像
