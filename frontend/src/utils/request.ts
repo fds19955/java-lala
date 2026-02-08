@@ -5,7 +5,7 @@ import router from '@/router'
 
 // 创建axios实例
 const instance = axios.create({
-  baseURL: 'http://49.233.185.174:8081', // 后端接口基础路径，直接请求后端
+  baseURL: '', // 后端接口基础路径，直接请求后端
   timeout: 10000 // 超时时间10秒
 })
 
