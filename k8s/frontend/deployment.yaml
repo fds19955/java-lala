@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: article-frontend
+  namespace: article-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: article-frontend
+  template:
+    metadata:
+      labels:
+        app: article-frontend
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-key
+      containers:
+      - name: frontend
+        image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/article-frontend:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: BACKEND_URL
+          value: "http://article-backend.article-system.svc.cluster.local"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: article-frontend
+  namespace: article-system
+spec:
+  type: NodePort  # 或使用LoadBalancer，根据云厂商调整
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: article-frontend

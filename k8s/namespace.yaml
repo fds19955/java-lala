@@ -1,6 +1,4 @@
 apiVersion: v1
-kind: Namespace
-  name: article-system
-  labels:
-    name: article-system
-    env: production
+kind: Namespace 
+metadata:
+  name: article-system 

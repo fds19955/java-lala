@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-slave
+  namespace: article-system
+spec:
+  serviceName: mysql-slave
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-slave
+  template:
+    metadata:
+      labels:
+        app: mysql-slave
+    spec:
+      nodeSelector:
+        cloud-type: aliyun  # 调度到阿里云节点
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: root-password
+        command: 
+        - bash
+        - "-c"
+        - |
+          # 等待主库启动
+          until mysql -h mysql-master.article-system.svc.cluster.local -uroot -p$MYSQL_ROOT_PASSWORD -e 'SELECT 1'; do
+            sleep 5
+          done
+          # 配置主从复制
+          mysql -uroot -p$MYSQL_ROOT_PASSWORD -e \
+            "CHANGE MASTER TO MASTER_HOST='mysql-master.article-system.svc.cluster.local', \
+             MASTER_USER='root', \
+             MASTER_PASSWORD='$MYSQL_ROOT_PASSWORD', \
+             MASTER_AUTO_POSITION=1; \
+             START SLAVE;"
+          # 启动MySQL
+          exec docker-entrypoint.sh mysqld
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: local-path
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-slave
+  namespace: article-system
+spec:
+  ports:
+  - port: 3306
+  selector:
+    app: mysql-slave

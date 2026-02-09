@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: article-backend
+  namespace: article-system
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: article-backend
+  template:
+    metadata:
+      labels:
+        app: article-backend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["article-backend"]
+              topologyKey: kubernetes.io/hostname
+      imagePullSecrets:
+        - name: aliyun-registry-key
+      containers:
+      - name: backend
+        image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/article-backend:latest
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: prod
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: root
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: root-password
+        resources:
+          requests:
+            cpu: "400m"
+            memory: "600Mi"
+          limits:
+            cpu: "800m"
+            memory: "1Gi"
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: article-backend
+  namespace: article-system
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: article-backend
