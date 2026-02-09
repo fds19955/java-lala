@@ -240,3 +240,5 @@ sudo sed -i 's/server: .*/server: https:\/\/192.168.2.1:6443/' /etc/rancher/k3s/
 # 进行Base64编码
 sudo cat /etc/rancher/k3s/k3s.yaml | base64 -w 0
 
+复制，粘贴到gitlab 变量 
+
