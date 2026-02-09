@@ -216,11 +216,39 @@ push-images:
   tags:
     - docker
     
-# 阶段4：部署数据库
+# ========== 阶段4：部署数据库（修复镜像下载问题） ==========
 deploy-db:
   stage: deploy-db
-  image: registry.k8s.io/kubectl:v1.29.0
+  # 使用稳定的 Alpine 镜像 + 手动安装 kubectl
+  image: alpine:3.18
   needs: ["test-aliyun"]
+  before_script:
+    - |
+      echo "📦 安装必要工具..."
+      apk update
+      apk add --no-cache curl mysql-client
+      
+      # 安装 kubectl（使用国内镜像源）
+      echo "⬇️ 下载 kubectl..."
+      KUBECTL_VERSION="v1.29.0"
+      
+      # 尝试多个镜像源
+      for MIRROR in \
+        "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        "https://mirrors.aliyun.com/kubernetes/kubectl/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"; do
+        echo "尝试从: $MIRROR 下载"
+        if curl -LO --connect-timeout 30 --retry 3 "$MIRROR"; then
+          echo "✅ kubectl 下载成功"
+          break
+        fi
+      done
+      
+      chmod +x kubectl
+      mv kubectl /usr/local/bin/
+      
+      # 验证安装
+      kubectl version --client
   script:
     - |
       set -e
@@ -228,16 +256,47 @@ deploy-db:
       mkdir -p ~/.kube
       echo "$KUBECONFIG" | base64 -d > ~/.kube/config
       
+      # 检查集群连接
+      echo "🔍 检查集群状态..."
+      kubectl cluster-info
+      kubectl get nodes -o wide
+      kubectl get pods -A
+      
       # 应用命名空间和Secret
+      echo "📁 创建命名空间和Secret..."
       kubectl apply -f k8s/namespace.yaml
       kubectl apply -f k8s/secrets/
       
       # 部署MySQL
+      echo "🚀 部署MySQL..."
       kubectl apply -f k8s/mysql/
       
-      # 等待MySQL就绪
-      echo "⏳ 等待MySQL就绪..."
+      # 等待MySQL启动
+      echo "⏳ 等待MySQL启动..."
+      COUNTER=0
+      MAX_ATTEMPTS=30
+      
+      while [ $COUNTER -lt $MAX_ATTEMPTS ]; do
+        if kubectl get pods -n article-system -l app=mysql-master 2>/dev/null | grep -q "Running"; then
+          echo "✅ MySQL Pod正在运行"
+          break
+        fi
+        echo "等待MySQL启动... ($((COUNTER + 1))/$MAX_ATTEMPTS)"
+        sleep 10
+        COUNTER=$((COUNTER + 1))
+      done
+      
+      if [ $COUNTER -eq $MAX_ATTEMPTS ]; then
+        echo "❌ MySQL启动超时"
+        echo "🔍 检查Pod状态:"
+        kubectl describe pod -l app=mysql-master -n article-system || true
+        exit 1
+      fi
+      
+      # 等待MySQL完全就绪
+      echo "⏳ 等待MySQL服务就绪..."
       kubectl wait --for=condition=ready pod -l app=mysql-master -n article-system --timeout=300s
+      
       echo "✅ 数据库部署完成"
   when: manual
   only:
@@ -247,13 +306,41 @@ deploy-db:
   tags:
     - docker
 
-# 阶段5：部署应用
+# ========== 阶段5：部署应用（修复镜像下载问题） ==========
 deploy:
   stage: deploy
-  image: bitnami/kubectl:1.29
+  # 使用稳定的 Alpine 镜像 + 手动安装 kubectl
+  image: alpine:3.18
   needs:
     - push-images
     - deploy-db
+  before_script:
+    - |
+      echo "📦 安装必要工具..."
+      apk update
+      apk add --no-cache curl
+      
+      # 安装 kubectl（使用国内镜像源）
+      echo "⬇️ 下载 kubectl..."
+      KUBECTL_VERSION="v1.29.0"
+      
+      # 尝试多个镜像源
+      for MIRROR in \
+        "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        "https://mirrors.aliyun.com/kubernetes/kubectl/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"; do
+        echo "尝试从: $MIRROR 下载"
+        if curl -LO --connect-timeout 30 --retry 3 "$MIRROR"; then
+          echo "✅ kubectl 下载成功"
+          break
+        fi
+      done
+      
+      chmod +x kubectl
+      mv kubectl /usr/local/bin/
+      
+      # 验证安装
+      kubectl version --client
   script:
     - |
       set -e
@@ -261,18 +348,38 @@ deploy:
       mkdir -p ~/.kube
       echo "$KUBECONFIG" | base64 -d > ~/.kube/config
       
-      # 更新镜像标签在Deployment中
-      kubectl set image deployment/article-backend article-backend=$DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-backend:${CI_COMMIT_SHORT_SHA} -n article-system
-      kubectl set image deployment/article-frontend article-frontend=$DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-frontend:${CI_COMMIT_SHORT_SHA} -n article-system
+      # 检查数据库状态
+      echo "🔍 检查数据库状态..."
+      kubectl get pods -n article-system -l app=mysql-master
+      
+      # 更新镜像标签
+      echo "🔄 更新应用镜像..."
+      kubectl set image deployment/article-backend article-backend=$DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-backend:${CI_COMMIT_SHORT_SHA} -n article-system --record
+      
+      # 如果前端部署存在，也更新前端
+      if kubectl get deployment/article-frontend -n article-system &>/dev/null; then
+        kubectl set image deployment/article-frontend article-frontend=$DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-frontend:${CI_COMMIT_SHORT_SHA} -n article-system --record
+      fi
       
       # 应用部署配置
+      echo "📁 应用Kubernetes配置..."
       kubectl apply -f k8s/backend/
-      kubectl apply -f k8s/frontend/
+      if [ -d "k8s/frontend" ]; then
+        kubectl apply -f k8s/frontend/
+      fi
       
       # 等待部署完成
+      echo "⏳ 等待后端部署完成..."
       kubectl rollout status deployment/article-backend -n article-system --timeout=300s
-      kubectl rollout status deployment/article-frontend -n article-system --timeout=300s
+      
+      if kubectl get deployment/article-frontend -n article-system &>/dev/null; then
+        echo "⏳ 等待前端部署完成..."
+        kubectl rollout status deployment/article-frontend -n article-system --timeout=300s
+      fi
+      
       echo "✅ 应用部署完成"
+      echo "📊 部署状态:"
+      kubectl get deployments,services,pods -n article-system
   only:
     - feature/initial-commit
     - main
