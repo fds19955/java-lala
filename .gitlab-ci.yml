@@ -33,28 +33,24 @@ build-backend:
       echo "🚀 开始构建后端应用..."
       mkdir -p ~/.m2
       cat > ~/.m2/settings.xml << 'EOF'
-      <?xml version="1.0" encoding="UTF-8"?>
-      <settings>
-        <mirrors>
-          <mirror>
-            <id>alimaven</id>
-            <name>aliyun maven</name>
-            <url>https://maven.aliyun.com/repository/public</url>
-            <mirrorOf>central</mirrorOf>
-          </mirror>
-        </mirrors>
-      </settings>
-      EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <mirrors>
+    <mirror>
+      <id>alimaven</id>
+      <name>aliyun maven</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
       cd backend
       mvn clean package -DskipTests
   artifacts:
     paths:
       - backend/target/*.jar
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
 
@@ -77,12 +73,9 @@ build-frontend:
     paths:
       - frontend/dist/
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
+
 # ========== 阶段3：推送镜像到阿里云仓库 ==========
 push-images:
   stage: push-images
@@ -92,94 +85,59 @@ push-images:
     - build-frontend
   before_script:
     - apk add --no-cache curl
-    - docker --version
   script:
     - |
-      set -e # 遇到错误立即退出，避免累积错误
+      set -e
       echo "🚀 开始镜像推送流程..."
 
-      # 1. 登录阿里云镜像仓库 (简化判断)
-      echo "🔐 登录阿里云镜像仓库..."
-      if [ -z "$ALIYUN_REGISTRY_PASSWORD" ]; then
-        echo "❌ 错误：环境变量 ALIYUN_REGISTRY_PASSWORD 未设置或为空"
-        exit 1
-      fi
+      # 登录阿里云镜像仓库
       echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
       echo "✅ 阿里云仓库登录成功"
 
-      # 2. 构建并推送后端镜像 (使用 echo 逐行创建 Dockerfile，避免 HEREDOC)
+      # 构建后端镜像
       echo "📦 构建后端镜像..."
-      echo "FROM eclipse-temurin:17-jre-alpine" > Dockerfile.backend
-      echo "WORKDIR /app" >> Dockerfile.backend
-      echo "COPY backend/target/*.jar app.jar" >> Dockerfile.backend
-      echo "EXPOSE 8080" >> Dockerfile.backend
-      echo 'ENTRYPOINT ["java", "-jar", "app.jar"]' >> Dockerfile.backend
+      cat > Dockerfile.backend << 'EOF'
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY backend/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
 
-      BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
-      LATEST_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
-
-      docker build -f Dockerfile.backend -t "$BACKEND_IMAGE_TAG" .
-      docker tag "$BACKEND_IMAGE_TAG" "$LATEST_TAG"
-      echo "✅ 后端镜像构建完成"
-
+      BACKEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
+      docker build -f Dockerfile.backend -t "$BACKEND_IMAGE" .
+      docker tag "$BACKEND_IMAGE" "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
+      
       echo "📤 推送后端镜像..."
-      docker push "$BACKEND_IMAGE_TAG"
-      docker push "$LATEST_TAG"
-      echo "✅ 后端镜像推送完成: $BACKEND_IMAGE_TAG"
+      docker push "$BACKEND_IMAGE"
+      docker push "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:latest"
+      echo "✅ 后端镜像推送完成"
 
-      # 3. 构建并推送前端镜像（如果存在）- 修复 if 语句结构
+      # 构建前端镜像（如果存在）
       if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist 2>/dev/null)" ]; then
         echo "📦 构建前端镜像..."
-        echo "FROM nginx:alpine" > frontend/Dockerfile.frontend
-        echo "COPY dist/ /usr/share/nginx/html" >> frontend/Dockerfile.frontend
-        echo "COPY nginx.conf /etc/nginx/conf.d/default.conf" >> frontend/Dockerfile.frontend # 这行没加，找bug找好久
-        echo "EXPOSE 80" >> frontend/Dockerfile.frontend
+        cat > frontend/Dockerfile.frontend << 'EOF'
+FROM nginx:alpine
+COPY dist/ /usr/share/nginx/html
+EXPOSE 80
+EOF
 
-        FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
-        FRONTEND_LATEST="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
-
-        docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE_TAG" frontend/
-        docker tag "$FRONTEND_IMAGE_TAG" "$FRONTEND_LATEST"
-        echo "✅ 前端镜像构建完成"
-
+        FRONTEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
+        docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE" frontend/
+        docker tag "$FRONTEND_IMAGE" "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
+        
         echo "📤 推送前端镜像..."
-        docker push "$FRONTEND_IMAGE_TAG"
-        docker push "$FRONTEND_LATEST"
+        docker push "$FRONTEND_IMAGE"
+        docker push "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:latest"
         echo "✅ 前端镜像推送完成"
-        FRONTEND_DEPLOY_INFO="前端: ${FRONTEND_IMAGE_TAG}"
       else
         echo "ℹ️ 前端构建产物不存在，跳过前端镜像构建"
-        FRONTEND_DEPLOY_INFO="前端: 未构建"
       fi
 
-      # 4. 验证推送
-      echo "🔍 验证镜像推送..."
-      if docker pull "$BACKEND_IMAGE_TAG"; then
-        echo "✅ 后端镜像验证成功"
-      else
-        echo "❌ 后端镜像验证失败"
-        exit 1
-      fi
-
-      # 5. 生成报告
-      echo ""
-      echo "========== 镜像推送报告 =========="
-      echo "✅ 推送成功的镜像:"
-      docker images | grep "$DOCKER_REGISTRY/$DOCKER_NAMESPACE" || echo "无相关镜像"
-      echo ""
-      echo "🔗 镜像地址:"
-      echo "后端: $BACKEND_IMAGE_TAG"
-      echo "$FRONTEND_DEPLOY_INFO"
-      echo "✅ 镜像推送阶段完成"
-      
-  only:
-    - feature/initial-commit
-    - main
-    - develop
+      echo "✅ 所有镜像推送完成"
   tags:
     - docker
 
-# ========== 阶段4：K3s部署 ==========
 # ========== 阶段4：K3s部署 ==========
 k3s-deploy:
   stage: k3s-deploy
@@ -214,10 +172,13 @@ k3s-deploy:
       set -e
       echo "🎯 开始K3s部署..."
 
+      # 创建目录
+      mkdir -p k8s
+
       # 创建命名空间
       kubectl create namespace $KUBE_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
-      # 创建secret
+      # 创建secret - 修复EOF格式
       cat > k8s/secret.yaml << EOF
 apiVersion: v1
 kind: Secret
@@ -228,9 +189,10 @@ type: Opaque
 stringData:
   mysql-root-password: "$MYSQL_ROOT_PASSWORD"
 EOF
+
       kubectl apply -f k8s/secret.yaml
 
-      # 创建后端deployment
+      # 创建后端deployment - 修复YAML格式
       cat > k8s/backend-deployment.yaml << EOF
 apiVersion: apps/v1
 kind: Deployment
@@ -267,7 +229,10 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
----
+EOF
+
+      # 创建service
+      cat > k8s/backend-service.yaml << EOF
 apiVersion: v1
 kind: Service
 metadata:
@@ -280,7 +245,9 @@ spec:
   selector:
     app: article-backend
 EOF
+
       kubectl apply -f k8s/backend-deployment.yaml
+      kubectl apply -f k8s/backend-service.yaml
 
       # 等待部署完成
       echo "⏳ 等待应用启动..."
@@ -288,6 +255,13 @@ EOF
 
       # 验证部署
       echo "✅ 部署完成"
-      kubectl get all -n $KUBE_NAMESPACE
+      echo "=== Pod状态 ==="
+      kubectl get pods -n $KUBE_NAMESPACE
+      
+      echo "=== Service状态 ==="
+      kubectl get svc -n $KUBE_NAMESPACE
+      
+      echo "=== Deployment状态 ==="
+      kubectl get deployments -n $KUBE_NAMESPACE
   tags:
     - docker
