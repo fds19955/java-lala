@@ -284,10 +284,26 @@ deploy-db:
       fi
   script:
     - |
-      set -e
       echo "🔧 开始部署数据库..."
       mkdir -p ~/.kube
-      echo "$KUBECONFIG" | base64 -d > ~/.kube/config
+      
+      # 调试：检查 KUBECONFIG 变量
+      echo "🔍 检查 KUBECONFIG 变量..."
+      echo "KUBECONFIG 长度: ${#KUBECONFIG} 字符"
+      echo "KUBECONFIG 前100字符: ${KUBECONFIG:0:100}"
+      
+      # 检查变量内容是否是 base64 编码
+      if echo "$KUBECONFIG" | grep -q "^[A-Za-z0-9+/]*=*$" && [ $(( ${#KUBECONFIG} % 4 )) -eq 0 ]; then
+        echo "📥 检测到 base64 编码，进行解码..."
+        echo "$KUBECONFIG" | base64 -d > ~/.kube/config
+      else
+        echo "📄 检测到已经是普通文本，直接写入..."
+        echo "$KUBECONFIG" > ~/.kube/config
+      fi
+      
+      # 验证配置文件
+      echo "✅ 验证 kubeconfig 文件..."
+      cat ~/.kube/config | head -5
       
       # 检查集群连接
       echo "🔍 检查集群状态..."
@@ -344,41 +360,76 @@ deploy:
   stage: deploy
   # 使用稳定的 Alpine 镜像 + 手动安装 kubectl
   image: alpine:3.18
-  needs:
-    - push-images
-    - deploy-db
+  needs: ["test-aliyun"]
   before_script:
     - |
       echo "📦 安装必要工具..."
       apk update
-      apk add --no-cache curl
+      apk add --no-cache curl mysql-client file
       
-      # 安装 kubectl（使用国内镜像源）
+      # 安装 kubectl（修复下载问题）
       echo "⬇️ 下载 kubectl..."
       KUBECTL_VERSION="v1.29.0"
       
-      # 尝试多个镜像源
+      # 尝试多个镜像源，不使用 -L 参数避免重定向
       for MIRROR in \
         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-        "https://mirrors.aliyun.com/kubernetes/kubectl/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        "https://github.com/kubernetes/kubernetes/releases/download/${KUBECTL_VERSION}/kubernetes-client-linux-amd64.tar.gz" \
         "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"; do
         echo "尝试从: $MIRROR 下载"
-        if curl -LO --connect-timeout 30 --retry 3 "$MIRROR"; then
-          echo "✅ kubectl 下载成功"
-          break
+        
+        # 下载到临时文件，不跟随重定向
+        if curl -f --connect-timeout 30 --retry 3 -o /tmp/kubectl_download "$MIRROR"; then
+          # 检查文件类型和大小
+          FILE_SIZE=$(stat -c%s /tmp/kubectl_download 2>/dev/null || wc -c < /tmp/kubectl_download)
+          echo "下载文件大小: ${FILE_SIZE} 字节"
+          
+          # 检查是否是二进制文件（不是HTML/文本）
+          if file /tmp/kubectl_download | grep -q "ELF"; then
+            echo "✅ 下载的是有效的二进制文件"
+            mv /tmp/kubectl_download /usr/local/bin/kubectl
+            chmod +x /usr/local/bin/kubectl
+            break
+          elif [ "$FILE_SIZE" -gt 10000000 ]; then  # 如果文件大于10MB，可能是tar包
+            echo "🔍 检测到可能是tar包，尝试解压..."
+            tar -xzOf /tmp/kubectl_download kubernetes/client/bin/kubectl 2>/dev/null > /usr/local/bin/kubectl || \
+            tar -xzOf /tmp/kubectl_download 2>/dev/null | grep -a "kubectl" > /usr/local/bin/kubectl || \
+            cp /tmp/kubectl_download /usr/local/bin/kubectl
+            chmod +x /usr/local/bin/kubectl
+            break
+          else
+            echo "❌ 下载的文件不是有效的二进制文件，可能是错误页面"
+            file /tmp/kubectl_download
+            cat /tmp/kubectl_download | head -5
+            continue
+          fi
+        else
+          echo "❌ 下载失败，尝试下一个镜像源"
         fi
       done
       
-      chmod +x kubectl
-      mv kubectl /usr/local/bin/
-      
       # 验证安装
-      kubectl version --client
+      if [ -x "/usr/local/bin/kubectl" ]; then
+        echo "✅ kubectl 安装成功"
+        kubectl version --client
+      else
+        echo "❌ 所有镜像源下载失败，尝试备用方案..."
+        
+        # 备用方案：从Docker镜像中提取kubectl
+        echo "🐳 尝试从k8s镜像中提取kubectl..."
+        docker run --rm -v /usr/local/bin:/out bitnami/kubectl:1.29.0 cp /opt/bitnami/kubectl/bin/kubectl /out/kubectl
+        chmod +x /usr/local/bin/kubectl
+        kubectl version --client
+      fi
   script:
     - |
       set -e
       echo "🚀 开始部署应用..."
+      echo "🔧 调试 KUBECONFIG 变量..."
+      echo "KUBECONFIG 长度: ${#KUBECONFIG}"
+      echo "KUB
       mkdir -p ~/.kube
+
       echo "$KUBECONFIG" | base64 -d > ~/.kube/config
       
       # 检查数据库状态
