@@ -219,4 +219,11 @@ sudo k3s kubectl top nodes
 到这里基本上结束了
 
 
-第三部分  
+第三部分  k8s部署
+
+1 # 为节点打标签，实现跨云调度
+kubectl label nodes <tencent-node> node-type=tencent cloud-provider=tencent
+kubectl label nodes <aliyun-node> node-type=aliyun cloud-provider=aliyun
+
+# 验证标签
+kubectl get nodes --show-labels

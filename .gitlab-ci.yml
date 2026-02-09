@@ -332,4 +332,4 @@ k3s-deploy:
     - main
     - develop
   tags:
-    - k3s  # 关键修复：使用k3s标签而不是docker标签
+    - docker  # 关键修复：使用k3s标签而不是docker标签
