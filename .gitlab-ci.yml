@@ -183,236 +183,111 @@ push-images:
 # ========== 阶段4：K3s部署 ==========
 k3s-deploy:
   stage: k3s-deploy
-  # 方案1：使用K3s官方镜像（推荐，与您的K3s环境一致）
-  image: rancher/kubectl:v1.29.4
-  
-  # 方案2：使用更小的Alpine镜像
-  # image: alpine/kubectl:1.29.4
-  
-  # 方案3：使用Bitnami镜像（稳定可靠）
-  # image: bitnami/kubectl:1.29.4
-  
-  # 方案4：直接使用K3s二进制文件（如果Runner上有K3s）
-  # image: docker:24.0.7
-  
+  image: alpine:3.19
   needs:
     - push-images
   before_script:
     - |
-      echo "🚀 准备K3s部署环境..."
+      echo "🔧 安装必要工具..."
+      apk add --no-cache curl gettext bash
       
-      # 根据选择的镜像安装必要工具
-      if [ "$(cat /etc/os-release | grep -i alpine)" ]; then
-        # Alpine系统
-        apk add --no-cache gettext bash curl
-      else
-        # Debian/Ubuntu系统
-        apt-get update && apt-get install -y gettext bash curl
-      fi
+      # 安装kubectl
+      echo "📥 安装kubectl..."
+      curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+      chmod +x kubectl
+      mv kubectl /usr/local/bin/
       
       # 配置kubeconfig
       mkdir -p ~/.kube
       if [ -f "/etc/rancher/k3s/k3s.yaml" ]; then
-        echo "🔧 配置K3s kubeconfig..."
         cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-        
-        # 获取Runner节点IP
         HOST_IP=$(hostname -I | awk '{print $1}')
-        echo "📡 使用IP地址: $HOST_IP"
-        
-        # 更新server地址
         sed -i "s/127.0.0.1/${HOST_IP}/g" ~/.kube/config
         echo "✅ Kubeconfig配置完成"
-      else
-        echo "⚠️ 未找到k3s.yaml，尝试其他配置方式"
-        
-        # 尝试从环境变量获取
-        if [ -n "$KUBECONFIG" ]; then
-          echo "$KUBECONFIG" > ~/.kube/config
-          echo "✅ 使用环境变量KUBECONFIG"
-        else
-          echo "❌ 错误：无法找到kubeconfig配置"
-          echo "请确保K3s配置文件存在或设置KUBECONFIG环境变量"
-          exit 1
-        fi
       fi
       
-      # 测试集群连接
-      echo "🔍 测试集群连接..."
-      kubectl cluster-info && echo "✅ 集群连接成功" || {
-        echo "❌ 集群连接失败"
-        echo "调试信息："
-        kubectl version
-        exit 1
-      }
-      
-      kubectl get nodes && echo "✅ 节点信息获取成功" || {
-        echo "❌ 无法获取节点信息"
-        exit 1
-      }
+      # 测试连接
+      kubectl cluster-info
+      kubectl get nodes
   script:
     - |
       set -e
       echo "🎯 开始K3s部署..."
-      
-      KUBE_NAMESPACE="article-system"
-      
-      # 1. 检查必要文件
-      echo "📁 检查K8s配置文件..."
-      if [ ! -d "k8s" ] || [ -z "$(ls k8s/*.yaml 2>/dev/null)" ]; then
-        echo "❌ 错误：未找到K8s配置文件"
-        echo "请确保k8s/目录包含必要的yaml文件"
-        exit 1
-      fi
-      
-      # 2. 创建命名空间
-      echo "📦 创建命名空间..."
-      kubectl create namespace $KUBE_NAMESPACE --dry-run=client -o yaml | kubectl apply -f - || echo "命名空间已存在"
-      
-      # 3. 生成配置目录
-      mkdir -p k8s/generated
-      
-      # 4. 处理secret配置
-      echo "🔐 生成secret配置..."
-      if [ -f "k8s/secret.yaml" ]; then
-        envsubst < k8s/secret.yaml > k8s/generated/secret.yaml
-        echo "✅ Secret配置生成完成"
-      else
-        echo "⚠️ 未找到secret.yaml，跳过"
-      fi
-      
-      # 5. 检查后端镜像是否存在
-      echo "🔍 检查后端镜像..."
-      BACKEND_IMAGE="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
-      
-      # 使用curl检查镜像是否存在（避免使用docker命令）
-      if curl -s -u "$ALIYUN_REGISTRY_USER:$ALIYUN_REGISTRY_PASSWORD" \
-        "https://crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/v2/fds-article/article-backend/tags/list" | \
-        grep -q "${CI_COMMIT_SHORT_SHA}"; then
-        echo "✅ 找到后端镜像: $BACKEND_IMAGE"
-        
-        # 处理deployment配置
-        if [ -f "k8s/backend-deployment.yaml" ]; then
-          sed -e "s|\\\${DOCKER_REGISTRY}|${DOCKER_REGISTRY}|g" \
-              -e "s|\\\${DOCKER_NAMESPACE}|${DOCKER_NAMESPACE}|g" \
-              -e "s|\\\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" \
-              k8s/backend-deployment.yaml > k8s/generated/backend-deployment.yaml
-          echo "✅ 后端Deployment配置生成完成"
-        fi
-      else
-        echo "❌ 错误：未找到后端镜像 $BACKEND_IMAGE"
-        echo "请先确保push-images阶段成功执行"
-        exit 1
-      fi
-      
-      # 6. 部署基础资源
-      echo "🚀 部署基础资源..."
-      
-      # 按顺序部署资源
-      for resource in configmap secret; do
-        if [ -f "k8s/generated/${resource}.yaml" ]; then
-          kubectl apply -f "k8s/generated/${resource}.yaml" && echo "✅ ${resource}部署成功"
-        elif [ -f "k8s/${resource}.yaml" ]; then
-          kubectl apply -f "k8s/${resource}.yaml" && echo "✅ ${resource}部署成功"
-        fi
-      done
-      
-      # 7. 部署数据库（如果配置文件存在）
-      if [ -f "k8s/mysql-master.yaml" ]; then
-        echo "🐬 部署MySQL数据库..."
-        kubectl apply -f k8s/mysql-master.yaml && echo "✅ MySQL主节点部署成功"
-        
-        # 等待数据库就绪
-        echo "⏳ 等待MySQL启动..."
-        if kubectl wait --for=condition=ready pod -l app=mysql -n $KUBE_NAMESPACE --timeout=300s 2>/dev/null; then
-          echo "✅ MySQL就绪"
-        else
-          echo "⚠️ MySQL启动超时，继续部署..."
-        fi
-      else
-        echo "ℹ️ 跳过MySQL部署（配置文件不存在）"
-      fi
-      
-      # 8. 部署Redis（如果配置文件存在）
-      if [ -f "k8s/redis.yaml" ]; then
-        echo "🔴 部署Redis..."
-        kubectl apply -f k8s/redis.yaml && echo "✅ Redis部署成功"
-      else
-        echo "ℹ️ 跳过Redis部署（配置文件不存在）"
-      fi
-      
-      # 9. 部署后端应用
-      echo "🚀 部署后端应用..."
-      if [ -f "k8s/generated/backend-deployment.yaml" ]; then
-        kubectl apply -f k8s/generated/backend-deployment.yaml && echo "✅ 后端应用部署成功"
-        
-        # 等待应用就绪
-        echo "⏳ 等待后端应用启动..."
-        if kubectl wait --for=condition=ready pod -l app=article-backend -n $KUBE_NAMESPACE --timeout=180s 2>/dev/null; then
-          echo "✅ 后端应用就绪"
-        else
-          echo "⚠️ 后端应用启动超时"
-        fi
-      else
-        echo "❌ 错误：未找到后端Deployment配置"
-        exit 1
-      fi
-      
-      # 10. 部署网络服务（如果配置文件存在）
-      if [ -f "k8s/ingress.yaml" ]; then
-        echo "🌐 部署Ingress..."
-        kubectl apply -f k8s/ingress.yaml && echo "✅ Ingress部署成功"
-      fi
-      
-      if [ -f "k8s/hpa.yaml" ]; then
-        echo "📊 部署HPA..."
-        kubectl apply -f k8s/hpa.yaml && echo "✅ HPA部署成功"
-      fi
-      
-      # 11. 部署验证
-      echo "🧪 部署验证..."
-      echo "=== Pod状态 ==="
-      kubectl get pods -n $KUBE_NAMESPACE -o wide
-      
-      echo "=== 服务状态 ==="
-      kubectl get svc -n $KUBE_NAMESPACE
-      
-      echo "=== 部署状态 ==="
-      kubectl get deployments -n $KUBE_NAMESPACE
-      
-      # 12. 健康检查
-      echo "❤️ 健康检查..."
-      BACKEND_POD=$(kubectl get pods -n $KUBE_NAMESPACE -l app=article-backend -o name 2>/dev/null | head -1)
-      if [ -n "$BACKEND_POD" ]; then
-        echo "🔍 检查后端Pod: $BACKEND_POD"
-        if kubectl exec -n $KUBE_NAMESPACE $BACKEND_POD -- sh -c "wget -q -O- http://localhost:8080/actuator/health" | grep -q "UP"; then
-          echo "✅ 后端服务健康检查通过"
-        else
-          echo "⚠️ 后端服务健康检查失败"
-          echo "查看Pod日志："
-          kubectl logs -n $KUBE_NAMESPACE $BACKEND_POD --tail=20
-        fi
-      else
-        echo "⚠️ 未找到后端Pod"
-      fi
-      
-      # 13. 生成报告
-      echo ""
-      echo "========== K3s部署完成报告 =========="
-      echo "🎉 部署流程完成!"
-      echo ""
-      echo "📊 集群信息:"
-      kubectl get nodes -o wide
-      echo ""
-      echo "🔧 后续操作:"
-      echo "  查看详细状态: kubectl get all -n $KUBE_NAMESPACE"
-      echo "  查看Pod日志: kubectl logs -f deployment/article-backend -n $KUBE_NAMESPACE"
-      echo "  进入Pod调试: kubectl exec -it deployment/article-backend -n $KUBE_NAMESPACE -- sh"
-      echo ""
-      echo "✅ K3s部署阶段执行完成"
-  only:
-    - feature/initial-commit
-    - main
-    - develop
+
+      # 创建命名空间
+      kubectl create namespace $KUBE_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+      # 创建secret
+      cat > k8s/secret.yaml << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: $KUBE_NAMESPACE
+type: Opaque
+stringData:
+  mysql-root-password: "$MYSQL_ROOT_PASSWORD"
+EOF
+      kubectl apply -f k8s/secret.yaml
+
+      # 创建后端deployment
+      cat > k8s/backend-deployment.yaml << EOF
+apiVersion: apps/v1
+kind: Deployment
+  name: article-backend
+  namespace: $KUBE_NAMESPACE
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: article-backend
+  template:
+         labels:
+        app: article-backend
+    spec:
+      containers:
+      - name: backend
+        image: $DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-backend:$CI_COMMIT_SHORT_SHA
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:mysql://mysql:3306/$MYSQL_DATABASE"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "root"
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: mysql-root-password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: article-backend
+  namespace: $KUBE_NAMESPACE
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: article-backend
+EOF
+      kubectl apply -f k8s/backend-deployment.yaml
+
+      # 等待部署完成
+      echo "⏳ 等待应用启动..."
+      kubectl rollout status deployment/article-backend -n $KUBE_NAMESPACE --timeout=300s
+
+      # 验证部署
+      echo "✅ 部署完成"
+      kubectl get all -n $KUBE_NAMESPACE
   tags:
     - docker
