@@ -227,3 +227,16 @@ kubectl label nodes <aliyun-node> node-type=aliyun cloud-provider=aliyun
 
 # 验证标签
 kubectl get nodes --show-labels
+
+2 主节点进行
+
+# 查看并确保server地址是WireGuard内网IP
+sudo cat /etc/rancher/k3s/k3s.yaml | grep server
+# 应该显示：server: https://192.168.2.1:6443
+
+# 如果是127.0.0.1，需要修改
+sudo sed -i 's/server: .*/server: https:\/\/192.168.2.1:6443/' /etc/rancher/k3s/k3s.yaml
+
+# 进行Base64编码
+sudo cat /etc/rancher/k3s/k3s.yaml | base64 -w 0
+

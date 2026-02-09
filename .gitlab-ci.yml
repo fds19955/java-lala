@@ -215,11 +215,11 @@ push-images:
     - develop
   tags:
     - docker
-    
+
 # 阶段4：部署数据库
 deploy-db:
   stage: deploy-db
-  image: bitnami/kubectl:1.29
+  image: docker:24.0.7
   needs: ["test-aliyun"]
   script:
     - |
