@@ -1,1 +1,1 @@
-<template>频道管理test</template>
+<template>频道管理</template>

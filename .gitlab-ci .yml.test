@@ -7,24 +7,28 @@ stages:
 
 variables:
   KUBE_NAMESPACE: "article-system"
+  
+  # 镜像仓库配置
   DOCKER_REGISTRY: "crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com"
   DOCKER_NAMESPACE: "fds-article"
   ALIYUN_REGISTRY_USER: "nick1191472774"
   ALIYUN_REGISTRY_PASSWORD: $ALIYUN_REGISTRY_PASSWORD
+  
+  # 数据库配置
   MYSQL_ROOT_PASSWORD: $DB_ROOT_PASSWORD
   MYSQL_DATABASE: "article_db"
 
-# ========== 阶段0：阿里云测试 ==========
 test-aliyun:
   stage: test-aliyun
   image: docker:24.0.7
   script:
     - |
+      echo "🔍 测试阿里云镜像仓库连接..."
       echo "$ALIYUN_REGISTRY_PASSWORD" | docker login -u "$ALIYUN_REGISTRY_USER" --password-stdin "$DOCKER_REGISTRY"
+      echo "✅ 阿里云仓库连接成功"
   tags:
     - docker
 
-# ========== 阶段1：构建后端 ==========
 build-backend:
   stage: build-backend
   image: maven:3.9.8-eclipse-temurin-17
@@ -45,20 +49,17 @@ build-backend:
         </mirrors>
       </settings>
       EOF
+      
       cd backend
       mvn clean package -DskipTests
+      echo "✅ 后端构建完成"
   artifacts:
     paths:
       - backend/target/*.jar
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
 
-# ========== 阶段2：构建前端 ==========
 build-frontend:
   stage: build-frontend
   image: node:20-alpine
@@ -69,22 +70,19 @@ build-frontend:
         echo "⚠️ 前端目录不存在，跳过构建"
         exit 0
       fi
+      
       cd frontend
       npm config set registry https://registry.npmmirror.com
       npm install --silent
       npm run build
+      echo "✅ 前端构建完成"
   artifacts:
     paths:
       - frontend/dist/
     expire_in: 1 hour
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
 
-# ========== 阶段3：推送镜像到阿里云仓库 ==========
 push-images:
   stage: push-images
   image: docker:24.0.7
@@ -112,7 +110,7 @@ push-images:
       BACKEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-backend:${CI_COMMIT_SHORT_SHA}"
       docker build -f Dockerfile.backend -t "$BACKEND_IMAGE_TAG" .
       docker push "$BACKEND_IMAGE_TAG"
-      echo "✅ 后端镜像推送完成"
+      echo "✅ 后端镜像推送完成: $BACKEND_IMAGE_TAG"
 
       # 构建前端镜像
       if [ -d "frontend/dist" ] && [ -n "$(ls -A frontend/dist)" ]; then
@@ -127,16 +125,11 @@ push-images:
         FRONTEND_IMAGE_TAG="${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}"
         docker build -f frontend/Dockerfile.frontend -t "$FRONTEND_IMAGE_TAG" frontend/
         docker push "$FRONTEND_IMAGE_TAG"
-        echo "✅ 前端镜像推送完成"
+        echo "✅ 前端镜像推送完成: $FRONTEND_IMAGE_TAG"
       fi
-  only:
-    - feature/initial-commit
-    - main
-    - develop
   tags:
     - docker
 
-# ========== 阶段4：K3s部署 ==========
 k3s-deploy:
   stage: k3s-deploy
   image: bitnami/kubectl:latest
@@ -144,103 +137,43 @@ k3s-deploy:
     - push-images
   before_script:
     - apk add --no-cache gettext
-    - mkdir -p ~/.kube
-    - cp /etc/rancher/k3s/k3s.yaml ~/.kube/config || echo "使用默认kubeconfig"
-    - kubectl cluster-info
   script:
     - |
       set -e
       echo "🚀 开始K3s部署..."
-
+      
       # 1. 创建命名空间
       kubectl apply -f k8s/namespace.yaml
-
-      # 2. 生成配置
+      
+      # 2. 处理模板变量
       mkdir -p k8s/generated
       
-      # 处理secret
+      # 处理secret.yaml
+      export MYSQL_ROOT_PASSWORD="$DB_ROOT_PASSWORD"
       envsubst < k8s/secret.yaml > k8s/generated/secret.yaml
       
-      # 处理deployment中的镜像标签
-      sed "s|\\\${DOCKER_REGISTRY}|${DOCKER_REGISTRY}|g; s|\\\${DOCKER_NAMESPACE}|${DOCKER_NAMESPACE}|g; s|\\\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" \
-        k8s/backend-deployment.yaml > k8s/generated/backend-deployment.yaml
-      
-      sed "s|\\\${DOCKER_REGISTRY}|${DOCKER_REGISTRY}|g; s|\\\${DOCKER_NAMESPACE}|${DOCKER_NAMESPACE}|g; s|\\\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" \
-        k8s/frontend-deployment.yaml > k8s/generated/frontend-deployment.yaml
-
-      # 3. 部署基础资源
+      # 3. 应用基础配置
       kubectl apply -f k8s/configmap.yaml
       kubectl apply -f k8s/generated/secret.yaml
-
-      # 4. 部署数据库
+      
+      # 4. 部署MySQL主从
       echo "🐬 部署MySQL主从集群..."
       kubectl apply -f k8s/mysql-master.yaml
       kubectl apply -f k8s/mysql-slave.yaml
-
+      
       # 5. 等待数据库就绪
-      echo "⏳ 等待MySQL主节点就绪..."
+      echo "⏳ 等待MySQL启动..."
       kubectl wait --for=condition=ready pod -l app=mysql,role=master -n $KUBE_NAMESPACE --timeout=300s
       
       # 6. 数据库初始化
       if [ -f "mysql/init/article_db.sql" ]; then
         echo "📦 初始化数据库..."
         kubectl run mysql-init --rm -i --restart='Never' --image=mysql:8.0 -n $KUBE_NAMESPACE -- \
-          bash -c "cat /tmp/init.sql | mysql -h mysql-master.article-system.svc.cluster.local -uroot -p$MYSQL_ROOT_PASSWORD article_db" < mysql/init/article_db.sql
+          bash -c "cat /dev/stdin | mysql -h mysql-master.article-system.svc.cluster.local -uroot -p$MYSQL_ROOT_PASSWORD article_db" < mysql/init/article_db.sql
       fi
-
+      
       # 7. 部署Redis
       kubectl apply -f k8s/redis.yaml
-
-      # 8. 部署应用服务
-      echo "🚀 部署应用服务..."
-      kubectl apply -f k8s/generated/backend-deployment.yaml
-      kubectl apply -f k8s/generated/frontend-deployment.yaml
-
-      # 9. 部署网络和服务
-      kubectl apply -f k8s/ingress.yaml
-      kubectl apply -f k8s/hpa.yaml
-
-      # 10. 等待应用就绪
-      echo "⏳ 等待应用启动..."
-      kubectl wait --for=condition=ready pod -l app=article-backend -n $KUBE_NAMESPACE --timeout=180s
-      kubectl wait --for=condition=ready pod -l app=article-frontend -n $KUBE_NAMESPACE --timeout=120s
-
-      # 11. 部署验证
-      echo "🧪 部署验证..."
-      echo "📊 Pod分布情况:"
-      kubectl get pods -n $KUBE_NAMESPACE -o wide
       
-      echo "🔍 服务状态:"
-      kubectl get svc -n $KUBE_NAMESPACE
-      
-      echo "🌐 Ingress状态:"
-      kubectl get ingress -n $KUBE_NAMESPACE
-      
-      # 健康检查
-      BACKEND_POD=$(kubectl get pods -n $KUBE_NAMESPACE -l app=article-backend -o name | head -1)
-      if kubectl exec -it -n $KUBE_NAMESPACE $BACKEND_POD -- curl -s http://localhost:8080/actuator/health | grep -q "UP"; then
-        echo "✅ 后端服务健康检查通过"
-      else
-        echo "⚠️ 后端服务健康检查失败"
-      fi
-
-      # 12. 生成报告
-      echo ""
-      echo "========== K3s部署完成报告 =========="
-      echo "🎉 跨云部署完成!"
-      echo ""
-      echo "📋 集群信息:"
-      kubectl get nodes -o wide
-      echo ""
-      echo "🔧 运维命令:"
-      echo "  查看所有Pod: kubectl get pods -n $KUBE_NAMESPACE -o wide"
-      echo "  查看日志: kubectl logs -f deployment/article-backend -n $KUBE_NAMESPACE"
-      echo "  进入Pod: kubectl exec -it <pod-name> -n $KUBE_NAMESPACE -- bash"
-      echo ""
-      echo "✅ K3s CI/CD流水线执行完成"
-  only:
-    - feature/initial-commit
-    - main
-    - develop
-  tags:
-    - docker
+      # 8. 部署后端应用（替换镜像标签）
+      cat k8s/backend-deployment.yaml | sed "s|\\\${DOCKER_REGISTRY}|${DOCKER_REGISTRY}|g" | sed "s|\\\${DOCKER_NAMESPACE}|${DOCKER_NAMESPACE}|g" | sed "s

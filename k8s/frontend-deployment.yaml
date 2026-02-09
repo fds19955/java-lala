@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+  name: article-frontend
+  namespace: article-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: article-frontend
+  template:
+         labels:
+        app: article-frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - article-frontend
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: frontend
+        image: ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/article-frontend:${CI_COMMIT_SHORT_SHA}
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+apiVersion: v1
+kind: Service
+  name: article-frontend
+  namespace: article-system
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: article-frontend

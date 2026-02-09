@@ -1,0 +1,222 @@
+第一部分 网络先通，启动主节点的k3s
+
+1. 先在腾讯云服务器配置 WireGuard（服务端）
+# 安装 WireGuard
+sudo apt update
+sudo apt install -y wireguard resolvconf
+
+# 生成密钥对
+wg genkey | sudo tee /etc/wireguard/private.key
+sudo chmod 600 /etc/wireguard/private.key
+sudo cat /etc/wireguard/private.key | wg pubkey | sudo tee /etc/wireguard/public.key
+
+# 创建 WireGuard 配置（服务端）
+sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
+[Interface]
+PrivateKey = $(sudo cat /etc/wireguard/private.key)
+Address = 192.168.2.1/24
+ListenPort = 51820
+SaveConfig = true
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# 阿里云服务器将作为客户端，先预留配置
+# [Peer]
+# PublicKey = <阿里云服务器的公钥>
+# AllowedIPs = 192.168.2.2/32
+EOF
+
+# 启用 IP 转发（重要！）
+echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# 启动 WireGuard
+sudo systemctl enable wg-quick@wg0
+sudo systemctl start wg-quick@wg0
+
+# 检查接口
+ip addr show wg0
+
+
+
+2. 获取腾讯云 WireGuard 配置信息
+
+# 查看公钥和监听端口
+echo "腾讯云服务器公钥:"
+sudo cat /etc/wireguard/public.key
+
+echo "腾讯云服务器外网IP:"
+curl -s ifconfig.me
+
+echo "WireGuard 监听端口: 51820"
+
+
+腾讯云服务器公钥:
+ntjboUfZq+F5keE6NoSGxSfEX9aGIv2WC+DH+bfwbGs=
+腾讯云服务器外网IP:
+49.233.185.174WireGuard 监听端口: 51820
+
+
+3 启动k3s之前，设置源
+
+sudo tee /etc/rancher/k3s/registries.yaml > /dev/null <<EOF
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://mirror.ccs.tencentyun.com"
+      - "https://registry.docker-cn.com"
+EOF
+
+4 腾讯云安装k3s
+
+# 现在安装 K3s，使用 wg0 接口
+curl -sfL https://get.k3s.io | \
+  INSTALL_K3S_MIRROR=cn \
+  INSTALL_K3S_VERSION=v1.27.9+k3s1 \
+  sh -s - server \
+    --flannel-iface=wg0 \
+    --node-ip=192.168.2.1 \
+    --advertise-address=192.168.2.1 \
+    --disable traefik \
+    --write-kubeconfig-mode=644 \
+    --node-name k3s-master-tencent
+
+
+5 检查 K3s 安装
+
+# 检查 K3s 状态
+sudo systemctl status k3s
+
+# 检查节点
+sudo k3s kubectl get nodes
+
+# 检查 Pods
+sudo k3s kubectl get pods -A
+
+
+6换服务器，配置阿里云服务器（客户端）
+
+# 安装 WireGuard
+sudo apt update
+sudo apt install -y wireguard
+
+# 生成密钥对
+wg genkey | sudo tee /etc/wireguard/private.key
+sudo chmod 600 /etc/wireguard/private.key
+sudo cat /etc/wireguard/private.key | wg pubkey | sudo tee /etc/wireguard/public.key
+
+
+# 创建 WireGuard 配置（客户端）
+sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
+[Interface]
+PrivateKey = $(sudo cat /etc/wireguard/private.key)
+Address = 192.168.2.2/24
+
+[Peer]
+PublicKey = <替换为腾讯云服务器的公钥>
+Endpoint = <替换为腾讯云服务器公网IP>:51820
+AllowedIPs = 192.168.2.0/24
+PersistentKeepalive = 25
+EOF
+
+
+# 启动 WireGuard
+sudo systemctl enable wg-quick@wg0
+sudo systemctl start wg-quick@wg0
+
+
+这一块配置如下，很容易错
+# 获取阿里云服务器的私钥
+ALI_PRIVATE_KEY=$(sudo cat /etc/wireguard/private.key)
+
+# 创建正确配置
+sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
+[Interface]
+PrivateKey = ${ALI_PRIVATE_KEY}
+Address = 192.168.2.2/24
+
+[Peer]
+PublicKey = ntjboUfZq+F5keE6NoSGxSfEX9aGIv2WC+DH+bfwbGs=
+Endpoint = 49.233.185.174:51820
+AllowedIPs = 192.168.2.0/24
+PersistentKeepalive = 25
+EOF
+
+7. 在腾讯云服务器添加阿里云客户端
+回到腾讯云服务器，添加阿里云客户端配置：
+# 获取阿里云服务器的公钥（在阿里云服务器上执行 cat /etc/wireguard/public.key）
+# 然后在腾讯云服务器上添加对等配置
+sudo wg set wg0 peer <阿里云服务器公钥> allowed-ips 192.168.2.2/32
+
+# 保存配置
+sudo wg-quick save wg0
+
+7. 测试 VPN 连接
+# 在腾讯云服务器 ping 阿里云
+ping 192.168.2.2
+
+# 在阿里云服务器 ping 腾讯云  
+ping 192.168.2.1
+
+8. 配置安全组规则
+腾讯云安全组：开放 UDP 51820 端口
+阿里云安全组：根据需要进行配置
+
+
+第二部分 阿里云服务器加入腾讯云集群
+
+1 获取主节点token和配置
+
+sudo cat /var/lib/rancher/k3s/server/node-token
+
+2 阿里云服务器安装K3s agent(多等待会，15分钟)
+
+# 创建rancher目录
+sudo mkdir -p /etc/rancher/k3s/
+
+然后安装K3s agent
+
+# 安装K3s agent（使用腾讯云主节点信息）
+curl -sfL https://get.k3s.io | \
+  INSTALL_K3S_MIRROR=cn \
+  INSTALL_K3S_VERSION=v1.27.9+k3s1 \
+  K3S_URL=https://192.168.2.1:6443 \
+  K3S_TOKEN=<替换为腾讯云服务器的token> \
+  sh -s - agent \
+    --flannel-iface=wg0 \
+    --node-ip=192.168.2.2 \
+    --node-name k3s-worker-aliyun \
+    --with-node-id
+
+3 安装完成后再配置镜像源
+
+# 等待K3s安装完成
+sudo systemctl status k3s-agent
+
+# 现在配置镜像源（安装后目录会自动创建）
+sudo tee /etc/rancher/k3s/registries.yaml > /dev/null <<EOF
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://registry.cn-hangzhou.aliyuncs.com"
+      - "https://docker.mirrors.ustc.edu.cn"
+EOF
+
+4 健康检查，在主节点检查
+
+# 检查所有系统Pod是否正常
+sudo k3s kubectl get pods -A
+
+# 检查集群组件状态
+sudo k3s kubectl get componentstatuses
+
+# 查看集群信息
+sudo k3s kubectl cluster-info
+
+# 检查节点资源使用情况
+sudo k3s kubectl top nodes
+
+到这里基本上结束了
+
+
+第三部分  
