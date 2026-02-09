@@ -215,11 +215,11 @@ push-images:
     - develop
   tags:
     - docker
-
+    
 # 阶段4：部署数据库
 deploy-db:
   stage: deploy-db
-  image: docker:24.0.7
+  image: registry.k8s.io/kubectl:v1.29.0
   needs: ["test-aliyun"]
   script:
     - |
