@@ -300,3 +300,16 @@ docker build -f Dockerfile.kubectl -t crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.
 
 # 推送镜像
 docker push crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
+
+#命令
+root@VM-0-11-ubuntu:/home/ubuntu/article-test# cat > Dockerfile.kubectl << 'EOF'
+FROM alpine:3.18
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencentyun.com/g' /etc/apk/repositories && \
+    apk update && apk add --no-cache wget mysql-client
+RUN wget -O /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.29.0/bin/linux/amd64/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
+RUN kubectl version --client
+WORKDIR /workspace
+CMD ["kubectl"]
+EOF
+
