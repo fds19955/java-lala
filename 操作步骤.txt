@@ -242,5 +242,61 @@ sudo cat /etc/rancher/k3s/k3s.yaml | base64 -w 0
 
 复制，粘贴到gitlab 变量 KUBECONFIG_BASE64
 
+3 打包镜像上传到镜像仓库，加速
+
+方法1
+
+# 在您的服务器上执行
+docker login -u nick1191472774 crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com     输入密码
+
+#创建 Dockerfile.kubectl 文件
+cat > Dockerfile.kubectl << 'EOF'
+FROM alpine:3.18
+# 安装必要工具
+RUN apk update && apk add --no-cache curl tar gzip
+# 设置 kubectl 版本
+ENV KUBECTL_VERSION=v1.29.0
+# 从成功的 GitHub 链接下载 kubectl
+RUN curl -LO "https://github.com/kubernetes/kubernetes/releases/download/${KUBECTL_VERSION}/kubernetes-client-linux-amd64.tar.gz" && \
+    tar -xzf kubernetes-client-linux-amd64.tar.gz && \
+    mv kubernetes/client/bin/kubectl /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl && \
+    rm -rf kubernetes kubernetes-client-linux-amd64.tar.gz
+# 验证安装
+RUN kubectl version --client
+# 安装其他常用工具
+RUN apk add --no-cache mysql-client
+# 设置工作目录
+WORKDIR /workspace
+CMD ["kubectl"]
+EOF
 
 
+# 构建镜像
+docker build -f Dockerfile.kubectl -t crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0 .
+
+# 推送镜像(名字在这里)
+docker push crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
+
+# 测试镜像
+docker run --rm crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0 version --client
+
+
+方法2
+
+cat > Dockerfile.kubectl << 'EOF'
+FROM alpine:3.18
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencentyun.com/g' /etc/apk/repositories && \
+    apk update && apk add --no-cache wget mysql-client
+RUN wget -O /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.29.0/bin/linux/amd64/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
+RUN kubectl version --client
+WORKDIR /workspace
+CMD ["kubectl"]
+EOF
+
+# 构建镜像（预计1-2分钟完成）
+docker build -f Dockerfile.kubectl -t crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0 .
+
+# 推送镜像
+docker push crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
