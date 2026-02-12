@@ -18,7 +18,7 @@ spec:
         high-perf: "true"  # 调度到高性能节点（腾讯云）
       containers:
       - name: mysql
-        image: mysql:8.0
+        image: registry.cn-hangzhou.aliyuncs.com/library/mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
