@@ -233,7 +233,6 @@ kubectl get nodes --show-labels
 # 查看并确保server地址是WireGuard内网IP
 sudo cat /etc/rancher/k3s/k3s.yaml | grep server
 # 应该显示：server: https://192.168.2.1:6443
-
 # 如果是127.0.0.1，需要修改
 sudo sed -i 's/server: .*/server: https:\/\/192.168.2.1:6443/' /etc/rancher/k3s/k3s.yaml
 
@@ -242,9 +241,10 @@ sudo cat /etc/rancher/k3s/k3s.yaml | base64 -w 0
 
 复制，粘贴到gitlab 变量 KUBECONFIG_BASE64
 
-3 打包镜像上传到镜像仓库，加速
 
-方法1
+3 打包镜像上传到镜像仓库，加速(失败了好几次，关键)
+
+方法1（某一台服务器）
 
 # 在您的服务器上执行
 docker login -u nick1191472774 crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com     输入密码
@@ -275,14 +275,14 @@ EOF
 # 构建镜像
 docker build -f Dockerfile.kubectl -t crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0 .
 
-# 推送镜像(名字在这里)
+# 推送镜像(名字是push之后一长串)
 docker push crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
 
 # 测试镜像
 docker run --rm crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0 version --client
 
 
-方法2
+方法2 （另一个服务器）
 
 cat > Dockerfile.kubectl << 'EOF'
 FROM alpine:3.18
@@ -312,4 +312,27 @@ RUN kubectl version --client
 WORKDIR /workspace
 CMD ["kubectl"]
 EOF
+后续一致
+
+4 在 GitLab 项目中配置镜像仓库认证
+
+    原因：即使脚本中配置了登录账号密码，没有这个，都下载不来镜像。DOCKER_AUTH_CONFIG是Docker 客户端识别的标准环境变量，当这个变量被设置时，Docker 客户端会自动使用其中的认证信息，无需手动运行 docker login。
+   步骤：Settings→ CI/CD→ Variables
+   key:  DOCKER_AUTH_CONFIG
+   value:  如下
+{
+  "auths": {
+    "crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com": {
+      "username": "nick1191472774",
+      "password": "您的密码"
+    }
+  }
+}
+
+
+
+
+
+
+
 
