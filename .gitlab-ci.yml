@@ -273,9 +273,9 @@ deploy-db:
         fi
       fi
       
-      # 6. 验证 kubectl 配置
-      echo "🔍 验证 kubectl 配置..."
-      kubectl config view --minify
+      # # 6. 验证 kubectl 配置
+      # echo "🔍 验证 kubectl 配置..."
+      # kubectl config view --minify
       
       # 7. 检查集群连接
       echo "🔍 检查集群状态..."
