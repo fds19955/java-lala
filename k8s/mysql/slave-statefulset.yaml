@@ -18,7 +18,7 @@ spec:
         cloud-type: aliyun  # 调度到阿里云节点
       containers:
       - name: mysql
-        image: mysql:8.0
+        image: registry.cn-hangzhou.aliyuncs.com/library/mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
