@@ -237,84 +237,84 @@ deploy-db:
       mkdir -p ~/.kube
 
       # --- 关键调试步骤 ---
-      echo "🔍 [调试] 原始KUBECONFIG_BASE64变量的长度: ${#KUBECONFIG}"
+      # echo "🔍 [调试] 原始KUBECONFIG_BASE64变量的长度: ${#KUBECONFIG}"
       
-      # 1. 强制base64解码并写入文件
-      echo "📥 正在解码KUBECONFIG并写入配置文件..."
-      echo "$KUBECONFIG" | base64 -d > ~/.kube/config
+      # # 1. 强制base64解码并写入文件
+      # echo "📥 正在解码KUBECONFIG并写入配置文件..."
+      # echo "$KUBECONFIG" | base64 -d > ~/.kube/config
       
-      # 2. 验证写入的文件
-      echo "✅ 配置文件写入完成。"
-      echo "🔍 [调试] 生成的kubeconfig文件大小: $(wc -c < ~/.kube/config) 字节"
+      # # 2. 验证写入的文件
+      # echo "✅ 配置文件写入完成。"
+      # echo "🔍 [调试] 生成的kubeconfig文件大小: $(wc -c < ~/.kube/config) 字节"
       
-      # 检查文件完整性
-      echo "🔍 检查kubeconfig结构..."
-      if grep -q "apiVersion:" ~/.kube/config && \
-        grep -q "clusters:" ~/.kube/config && \
-        grep -q "users:" ~/.kube/config; then
-        echo "✅ kubeconfig 基本结构完整"
-      else
-        echo "❌ kubeconfig 缺少必要字段"
-        exit 1
-      fi
+      # # 检查文件完整性
+      # echo "🔍 检查kubeconfig结构..."
+      # if grep -q "apiVersion:" ~/.kube/config && \
+      #   grep -q "clusters:" ~/.kube/config && \
+      #   grep -q "users:" ~/.kube/config; then
+      #   echo "✅ kubeconfig 基本结构完整"
+      # else
+      #   echo "❌ kubeconfig 缺少必要字段"
+      #   exit 1
+      # fi
       
-      # 检查server地址
-      echo "🔍 检查server地址..."
-      SERVER_ADDR=$(grep -A5 "server:" ~/.kube/config | grep "server:" | head -1 | cut -d' ' -f2)
-      echo "Server地址: $SERVER_ADDR"
+      # # 检查server地址
+      # echo "🔍 检查server地址..."
+      # SERVER_ADDR=$(grep -A5 "server:" ~/.kube/config | grep "server:" | head -1 | cut -d' ' -f2)
+      # echo "Server地址: $SERVER_ADDR"
       
-      # 检查证书长度
-      echo "🔍 检查证书长度..."
-      CERT_LINES=$(grep -c "certificate-authority-data:" ~/.kube/config)
-      CLIENT_CERT_LINES=$(grep -c "client-certificate-data:" ~/.kube/config)
-      CLIENT_KEY_LINES=$(grep -c "client-key-data:" ~/.kube/config)
-      echo "证书数量: CA=$CERT_LINES, ClientCert=$CLIENT_CERT_LINES, ClientKey=$CLIENT_KEY_LINES"
+      # # 检查证书长度
+      # echo "🔍 检查证书长度..."
+      # CERT_LINES=$(grep -c "certificate-authority-data:" ~/.kube/config)
+      # CLIENT_CERT_LINES=$(grep -c "client-certificate-data:" ~/.kube/config)
+      # CLIENT_KEY_LINES=$(grep -c "client-key-data:" ~/.kube/config)
+      # echo "证书数量: CA=$CERT_LINES, ClientCert=$CLIENT_CERT_LINES, ClientKey=$CLIENT_KEY_LINES"
       
-      # 3. 验证kubectl能否读取此配置
-      echo "🔍 验证kubectl配置..."
-      if kubectl config view --minify 2>&1; then
-        echo "✅ kubeconfig 文件格式有效。"
-      else
-        echo "❌ 错误：kubeconfig 文件无效或无法解析！"
-        # 尝试更详细的错误信息
-        echo "🔍 尝试kubectl版本信息..."
-        kubectl version 2>&1 || true
-        exit 1
-      fi
-      # --- 调试结束 ---
+      # # 3. 验证kubectl能否读取此配置
+      # echo "🔍 验证kubectl配置..."
+      # if kubectl config view --minify 2>&1; then
+      #   echo "✅ kubeconfig 文件格式有效。"
+      # else
+      #   echo "❌ 错误：kubeconfig 文件无效或无法解析！"
+      #   # 尝试更详细的错误信息
+      #   echo "🔍 尝试kubectl版本信息..."
+      #   kubectl version 2>&1 || true
+      #   exit 1
+      # fi
+      # # --- 调试结束 ---
 
-       # --- 新增：关键调试步骤 ---
-      echo "🔍 [调试] 原始KUBECONFIG_BASE64变量的长度: ${#KUBECONFIG}"
+      #  # --- 新增：关键调试步骤 ---
+      # echo "🔍 [调试] 原始KUBECONFIG_BASE64变量的长度: ${#KUBECONFIG}"
       
-      # 1. 强制base64解码并写入文件
-      echo "📥 正在解码KUBECONFIG并写入配置文件..."
-      echo "$KUBECONFIG" | base64 -d > ~/.kube/config
+      # # 1. 强制base64解码并写入文件
+      # echo "📥 正在解码KUBECONFIG并写入配置文件..."
+      # echo "$KUBECONFIG" | base64 -d > ~/.kube/config
       
-      # 2. 验证写入的文件
-      echo "✅ 配置文件写入完成。"
-      echo "🔍 [调试] 生成的kubeconfig文件大小: $(wc -c < ~/.kube/config) 字节"
-      echo "🔍 [调试] 文件前3行内容:"
-      head -3 ~/.kube/config
+      # # 2. 验证写入的文件
+      # echo "✅ 配置文件写入完成。"
+      # echo "🔍 [调试] 生成的kubeconfig文件大小: $(wc -c < ~/.kube/config) 字节"
+      # echo "🔍 [调试] 文件前3行内容:"
+      # head -3 ~/.kube/config
       
-      # 3. 验证kubectl能否读取此配置
-      echo "🔍 验证kubectl配置..."
-      if kubectl config view --minify &>/dev/null; then
-        echo "✅ kubeconfig 文件格式有效。"
-      else
-        echo "❌ 错误：kubeconfig 文件无效或无法解析！"
-        exit 1
-      fi
-      # --- 调试结束 ---
+      # # 3. 验证kubectl能否读取此配置
+      # echo "🔍 验证kubectl配置..."
+      # if kubectl config view --minify &>/dev/null; then
+      #   echo "✅ kubeconfig 文件格式有效。"
+      # else
+      #   echo "❌ 错误：kubeconfig 文件无效或无法解析！"
+      #   exit 1
+      # fi
+      # # --- 调试结束 ---
       
-      # 智能处理KUBECONFIG
-      echo "🔍 处理KUBECONFIG配置..."
-      if echo "$KUBECONFIG" | base64 -d > /dev/null 2>&1; then
-        echo "📥 检测到base64编码，进行解码..."
-        echo "$KUBECONFIG" | base64 -d > ~/.kube/config
-      else
-        echo "📄 检测到已经是普通文本，直接写入..."
-        echo "$KUBECONFIG" > ~/.kube/config
-      fi
+      # # 智能处理KUBECONFIG
+      # echo "🔍 处理KUBECONFIG配置..."
+      # if echo "$KUBECONFIG" | base64 -d > /dev/null 2>&1; then
+      #   echo "📥 检测到base64编码，进行解码..."
+      #   echo "$KUBECONFIG" | base64 -d > ~/.kube/config
+      # else
+      #   echo "📄 检测到已经是普通文本，直接写入..."
+      #   echo "$KUBECONFIG" > ~/.kube/config
+      # fi
       
       # 检查集群连接
       echo "🔍 检查集群状态..."
