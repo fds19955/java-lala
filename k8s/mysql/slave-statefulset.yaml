@@ -14,11 +14,11 @@ spec:
       labels:
         app: mysql-slave
     spec:
-      nodeSelector:
-        cloud-type: aliyun  # 调度到阿里云节点
+      # nodeSelector:
+      #   cloud-type: aliyun  # 调度到阿里云节点
       containers:
       - name: mysql
-        image: registry.cn-hangzhou.aliyuncs.com/library/mysql:8.0
+        image: swr.cn-north-1.myhuaweicloud.com/library/mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
