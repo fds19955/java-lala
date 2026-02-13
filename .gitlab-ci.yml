@@ -345,6 +345,13 @@ deploy:
       # 检查数据库状态
       echo "🔍 检查数据库状态..."
       kubectl get pods -n article-system -l app=mysql-master
+
+      # 应用部署配置
+      echo "📁 应用Kubernetes配置..."
+      kubectl apply -f k8s/backend/
+      if [ -d "k8s/frontend" ]; then
+        kubectl apply -f k8s/frontend/
+      fi
       
       # 更新后端镜像
       echo "🔄 更新应用镜像..."
@@ -353,13 +360,6 @@ deploy:
       # 如果前端部署存在，也更新前端
       if kubectl get deployment/article-frontend -n article-system &>/dev/null; then
         kubectl set image deployment/article-frontend article-frontend=$DOCKER_REGISTRY/$DOCKER_NAMESPACE/article-frontend:${CI_COMMIT_SHORT_SHA} -n article-system --record
-      fi
-      
-      # 应用部署配置
-      echo "📁 应用Kubernetes配置..."
-      kubectl apply -f k8s/backend/
-      if [ -d "k8s/frontend" ]; then
-        kubectl apply -f k8s/frontend/
       fi
       
       # 等待部署完成

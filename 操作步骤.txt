@@ -219,7 +219,7 @@ sudo k3s kubectl top nodes
 到这里基本上结束了
 
 
-第三部分  k8s部署
+第三部分  k8s部署-数据库
 
 1 # 为节点打标签，实现跨云调度
 kubectl label nodes <tencent-node> node-type=tencent cloud-provider=tencent
@@ -234,6 +234,7 @@ kubectl get nodes --show-labels
 sudo cat /etc/rancher/k3s/k3s.yaml | grep server
 # 应该显示：server: https://192.168.2.1:6443
 # 如果是127.0.0.1，需要修改
+
 sudo sed -i 's/server: .*/server: https:\/\/192.168.2.1:6443/' /etc/rancher/k3s/k3s.yaml
 
 # 进行Base64编码
@@ -314,7 +315,7 @@ CMD ["kubectl"]
 EOF
 后续一致
 
-4 在 GitLab 项目中配置镜像仓库认证
+4 在 GitLab 项目中配置镜像仓库认证，直接拉取私有仓库镜像
 
     原因：即使脚本中配置了登录账号密码，没有这个，都下载不来镜像。DOCKER_AUTH_CONFIG是Docker 客户端识别的标准环境变量，当这个变量被设置时，Docker 客户端会自动使用其中的认证信息，无需手动运行 docker login。
    步骤：Settings→ CI/CD→ Variables
@@ -329,11 +330,83 @@ EOF
   }
 }
 
-5 修复 
+5 修复 kubeconfig 配置问题
+
+KUBECONFIG_BASE64: $KUBECONFIG_BASE64 # 这里变量名改了过来
+export KUBECONFIG=~/.kube/config     #设置 KUBECONFIG 环境变量
 
 
+6 节点调度问题
+注释这两行，本来计划主节点在腾讯云，但是内存不足，让它自动吧
+# nodeSelector:
+      #   high-perf: "true"  # 调度到高性能节点（腾讯云）
 
+7 内存不足问题
 
+查看：
+docker stats   #容器层面查看内存还有状态
+kubectl top nodes    #集群层面查看内存还有状态
 
+做法：
+#  停止最耗内存的 sidekiq（处理后台任务）
+docker exec article-gitlab gitlab-ctl stop sidekiq
 
+# 停止 prometheus 监控（非必需）
+docker exec article-gitlab gitlab-ctl stop prometheus
+
+#  停止 gitlab-exporter
+docker exec article-gitlab gitlab-ctl stop gitlab-exporter
+
+# 检查停止后效果
+docker stats article-gitlab
+free -h
+
+8 成功之后，确认和查看流程
+
+ 8.1 查看 Kubernetes 资源状态
+ # 查看所有 Pod
+kubectl get pods -n article-system
+
+# 查看 Pod 详情
+kubectl describe pod -n article-system mysql-master-0
+
+# 查看所有资源
+kubectl get all -n article-system
+
+# 查看服务
+kubectl get svc -n article-system
+
+8.2验证 MySQL 运行状态
+
+# 查看 MySQL Pod 日志
+kubectl logs -n article-system mysql-master-0 --tail=20
+
+# 查看 Pod 事件
+kubectl describe pod -n article-system mysql-master-0 | grep -A10 "Events:"
+
+# 检查 Pod 运行时长
+kubectl get pod -n article-system mysql-master-0 -o wide
+
+8.3 测试mysql连接
+
+# 获取 root 密码（从 Secret）
+MYSQL_PASSWORD=$(kubectl get secret -n article-system mysql-secret -o jsonpath='{.data.root-password}' | base64 -d)
+echo "MySQL Root 密码: $MYSQL_PASSWORD"
+
+# 进入 Pod 并连接 MySQL
+kubectl exec -it -n article-system mysql-master-0 -- mysql -u root -p$MYSQL_PASSWORD -e "SHOW DATABASES;"
+
+# 或者通过端口转发测试
+kubectl port-forward -n article-system svc/mysql-master 33306:3306 &
+# 然后可以在本地连接：mysql -h 127.0.0.1 -P 33306 -u root -p
+
+8.4 查看 PVC 和存储
+# 查看 PVC
+kubectl get pvc -n article-system
+
+# 查看 PV
+kubectl get pv
+
+# 查看存储使用
+kubectl exec -n article-system mysql-master-0 -- df -h
 
