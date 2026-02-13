@@ -220,7 +220,7 @@ push-images:
 deploy-db:
   stage: deploy-db
   # 使用您构建的私有kubectl镜像
-  image: /fds-article/kubectl:1.29.0
+  image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
   needs: ["push-images"]
   before_script:
     - |

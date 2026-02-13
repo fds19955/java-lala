@@ -14,7 +14,7 @@ spring:
   # 数据源配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db
+    url: "jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true"
     username: root
     password: fds00913
     hikari:
