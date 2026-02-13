@@ -31,7 +31,7 @@ spec:
       imagePullSecrets:
         - name: aliyun-registry-key
       containers:
-      - name: backend
+      - name: article-backend
         image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/article-backend:latest
         env:
         - name: SPRING_PROFILES_ACTIVE
