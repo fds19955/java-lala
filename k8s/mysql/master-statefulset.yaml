@@ -14,8 +14,8 @@ spec:
       labels:
         app: mysql-master
     spec:
-      nodeSelector:
-        high-perf: "true"  # 调度到高性能节点（腾讯云）
+      # nodeSelector:
+      #   high-perf: "true"  # 调度到高性能节点（腾讯云）
       containers:
       - name: mysql
         image: swr.cn-north-1.myhuaweicloud.com/library/mysql:8.0
