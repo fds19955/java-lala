@@ -16,7 +16,7 @@ spec:
       imagePullSecrets:
         - name: aliyun-registry-key
       containers:
-      - name: frontend
+      - name: article-frontend
         image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/article-frontend:latest
         ports:
         - containerPort: 80
