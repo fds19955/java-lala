@@ -414,4 +414,16 @@ kubectl exec -n article-system mysql-master-0 -- df -h
 
 第四部分，前后端联调
 
-1 
+1 cicd成功之后，后端启动了起来，但是没和数据库连接
+
+查看：
+1.1 腾讯云-端口转发
+kubectl port-forward svc/article-backend -n article-system 8888:80 &
+1.2 开一个新的终端，
+curl -v http://localhost:8888/api/articles
+1.3提示获取失败
+{"code":500,"data":null,"message":"获取文章列表失败: Could not open JDBC Connection for transaction"}root@VM-0-11-ubuntu:/home/ubuntu#
+
+解决：
+1.4 改后端连接数据库的url
+url: jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db

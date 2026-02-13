@@ -37,7 +37,7 @@ spec:
         - name: SPRING_PROFILES_ACTIVE
           value: prod
         - name: SPRING_DATASOURCE_URL
-          value: "jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db"
+          value: "jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true"
         - name: SPRING_DATASOURCE_USERNAME
           value: root
         - name: SPRING_DATASOURCE_PASSWORD
