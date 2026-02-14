@@ -5,6 +5,7 @@ stages:
   - push-images
   - deploy-db
   - deploy
+  - deploy-ingress
 
 variables:
   DOCKER_HOST: "unix:///var/run/docker.sock"
@@ -396,9 +397,69 @@ deploy:
         kubectl rollout status deployment/article-frontend -n article-system --timeout=300s
       fi
       
+      # 将前端Service改为ClusterIP（因为Ingress将作为入口）
+      echo "🔧 将前端Service改为ClusterIP..."
+      kubectl patch svc article-frontend -n article-system -p '{"spec":{"type":"ClusterIP"}}'
+
       echo "✅ 应用部署完成"
       echo "📊 部署状态:"
       kubectl get deployments,services,pods -n article-system
+  only:
+    - feature/initial-commit
+    - main
+    - develop
+  tags:
+    - docker
+
+# ========== 阶段7：部署Ingress控制器和规则 ==========
+deploy-ingress:
+  stage: deploy-ingress
+  image: $KUBECTL_IMAGE
+  needs: ["deploy-frontend"]
+  script:
+    - |
+      set -e
+      echo "🌐 开始部署Ingress..."
+      mkdir -p ~/.kube
+      echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
+      export KUBECONFIG=~/.kube/config
+
+      # 1. 部署Ingress控制器（如果尚未部署）
+      echo "🚀 部署Ingress控制器..."
+      # 检查是否已存在ingress-nginx命名空间
+      if ! kubectl get namespace ingress-nginx &>/dev/null; then
+        echo "📦 安装Nginx Ingress Controller..."
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+      else
+        echo "✅ Ingress控制器已存在"
+      fi
+      
+      # 2. 等待Ingress控制器就绪
+      echo "⏳ 等待Ingress控制器就绪..."
+      kubectl wait --namespace ingress-nginx \
+        --for=condition=ready pod \
+        --selector=app.kubernetes.io/component=controller \
+        --timeout=180s
+      
+      # 3. 应用Ingress路由规则
+      echo "📄 应用Ingress路由规则..."
+      kubectl apply -f k8s/ingress.yaml
+      
+      # 4. 获取Ingress访问信息
+      echo "🔍 获取Ingress访问信息..."
+      INGRESS_PORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+      echo ""
+      echo "🎉 部署完成！"
+      echo "========================================"
+      echo "🌐 应用访问地址: http://49.233.185.174:$INGRESS_PORT"
+      echo "   - 首页: http://49.233.185.174:$INGRESS_PORT/"
+      echo "   - API: http://49.233.185.174:$INGRESS_PORT/api/"
+      echo "========================================"
+      echo ""
+      echo "📊 最终部署状态:"
+      kubectl get all,ingress -n article-system
+      
+      echo "✅ Ingress部署完成"
   only:
     - feature/initial-commit
     - main

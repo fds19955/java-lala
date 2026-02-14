@@ -1,10 +1,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: article-system-ingress
+  name: article-ingress
   namespace: article-system
   annotations:
-    # 可根据需要添加注解，例如重写路径、SSL等
+  # 可根据需要添加注解，例如重写路径、SSL等
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   rules:
