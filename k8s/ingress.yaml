@@ -7,6 +7,7 @@ metadata:
   # 可根据需要添加注解，例如重写路径、SSL等
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
+  ingressClassName: nginx
   rules:
   - http:
       paths:
