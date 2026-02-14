@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: article-system-ingress
+  namespace: article-system
+  annotations:
+    # 可根据需要添加注解，例如重写路径、SSL等
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      # 规则1：所有 /api 开头的请求，路由到后端服务
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: article-backend
+            port:
+              number: 80
+      # 规则2：其他所有请求（如 /, /index.html, /assets/*），路由到前端服务
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: article-frontend
+            port:
+              number: 80

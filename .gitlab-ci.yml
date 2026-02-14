@@ -247,10 +247,11 @@ deploy-db:
       kubectl cluster-info
       kubectl get nodes -o wide
 
-      # 3. 应用命名空间和 Secret
+      # 3. 应用命名空间和 Secret，ingress
       echo "📁 创建命名空间和 Secret..."
       kubectl apply -f k8s/namespace.yaml
       kubectl apply -f k8s/secrets/
+      kubectl apply -f k8s/ingress.yaml
 
       # 4. 部署 MySQL
       echo "🚀 部署 MySQL StatefulSet 和 Service..."

@@ -441,5 +441,46 @@ pkill -9 kubectl
 1.9 后端临时访问
 放行8888端口
 kubectl port-forward --address 0.0.0.0 svc/article-backend -n article-system 8888:80 &
-http://49.233.185.174:8888/api/articles    get请求
+http://49.233.185.174:8888/api/articles    get请求，成功，结束
 pkill -9 kubectl   关闭
+
+2 cicd成功之后，后端数据库启动了起来，但是前后端交互有问题
+
+2.1 改nginx的配置连接信息，改为下面这个
+
+# article-backend：这是后端服务在Kubernetes集群内部的服务名称，80：这是 article-backend这个Service定义的端口（port: 80）
+proxy_pass http://article-backend:80/api/
+
+2.2 前后端通信成功，完成，可以过年了
+
+
+第五部分，前端解耦，把nginx抽出来，部署ingress
+
+1 部署Nginx Ingress控制器
+
+1.1# 使用官方YAML部署，并通过NodePort对外提供服务
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+#
+
+1.2 #执行
+ kubectl get svc -n ingress-nginx
+会看到ingress-nginx-controller服务有一个NodePort（例如80:3xxxx/TCP）。需要通过云控制台安全组开放这个端口，并通过 http://49.233.185.174:<NodePort>来访问。
+
+1.3 防火墙放开那个端口
+
+
+2 创建Ingress资源定义路由规则，创建文件 k8s/ingress.yaml
+
+见代码
+
+
+3 改造前端部署，移除反向代理功能
+
+只改nginx配置的部分，location /api/ { ...}都删掉
+
+4 流程变为
+用户请求 → Ingress控制器（根据规则路由）→ /api/ 请求至后端Service，其他请求至前端Service → 前端Pod（仅返回静态文件）。
+
+5 请求地址：
+http://49.233.185.174:31859
+
