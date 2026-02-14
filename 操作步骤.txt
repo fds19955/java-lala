@@ -484,3 +484,11 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/cont
 5 请求地址：
 http://49.233.185.174:31859
 
+6 单独执行，报错还没找到ingress
+kubectl apply -f k8s/ingress.yam
+
+7解决，加了一个新的部署ingress阶段，等一下等待Ingress控制器就绪就绪
+
+见代码
+
+8 最终，
