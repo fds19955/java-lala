@@ -418,12 +418,28 @@ kubectl exec -n article-system mysql-master-0 -- df -h
 
 查看：
 1.1 腾讯云-端口转发
-kubectl port-forward svc/article-backend -n article-system 8888:80 &
+kubectl port-forward svc/article-backend -n article-system 8081:80 &
 1.2 开一个新的终端，
-curl -v http://localhost:8888/api/articles
+curl -v http://localhost:8081/api/articles
 1.3提示获取失败
 {"code":500,"data":null,"message":"获取文章列表失败: Could not open JDBC Connection for transaction"}root@VM-0-11-ubuntu:/home/ubuntu#
+1.4. 干掉(如果端口冲突的话)
+pkill -9 kubectl
 
 解决：
-1.4 改后端连接数据库的url
+1.5 改后端连接数据库的url
 "jdbc:mysql://mysql-master.article-system.svc.cluster.local:3306/article_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true"
+
+1.6 设置数据库初始脚本信息，见yml文件
+
+1.7 防火墙打开31700端口
+
+1.8 访问地址
+前端 http://49.233.185.174:31700
+后端 没有暴露，CLUSTER-IP,出于安全性考虑
+
+1.9 后端临时访问
+放行8888端口
+kubectl port-forward --address 0.0.0.0 svc/article-backend -n article-system 8888:80 &
+http://49.233.185.174:8888/api/articles    get请求
+pkill -9 kubectl   关闭
