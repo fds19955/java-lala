@@ -341,7 +341,7 @@ deploy-db:
   tags:
     - docker
 
-# ========== 阶段5：部署应用（使用私有镜像） ==========
+# ========== 阶段5：部署前后端应用（使用私有镜像） ==========
 deploy:
   stage: deploy
   # 使用您构建的私有kubectl镜像
@@ -414,7 +414,7 @@ deploy:
 deploy-ingress:
   stage: deploy-ingress
   image: $KUBECTL_IMAGE
-  needs: ["deploy-frontend"]
+  needs: ["deploy"]
   script:
     - |
       set -e
