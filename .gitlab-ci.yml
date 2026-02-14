@@ -410,8 +410,79 @@ deploy:
   tags:
     - docker
 
- # ========== 阶段6：部署Ingress控制器和规则 ==========
+#  # ========== 阶段6：部署Ingress控制器和规则 ==========
 
+# deploy-ingress:
+#   stage: deploy-ingress
+#   image: $KUBECTL_IMAGE
+#   needs: ["deploy"]
+#   script:
+#     - |
+#       set -e
+#       echo "🌐 开始部署Ingress..."
+#       mkdir -p ~/.kube
+#       echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
+#       export KUBECONFIG=~/.kube/config
+
+#       # 1. 清理可能存在的旧Ingress控制器（如果之前部署失败残留）
+#       echo "🧹 检查并清理可能存在的旧Ingress控制器..."
+#       if kubectl get namespace ingress-nginx &>/dev/null; then
+#         echo "⚠️  检测到已存在的ingress-nginx命名空间，正在清理..."
+#         kubectl delete namespace ingress-nginx --ignore-not-found=true --wait=true
+#         echo "等待命名空间完全删除..."
+#         sleep 20
+#       fi
+
+#       # 2. 部署Ingress控制器
+#       echo "🚀 部署Nginx Ingress Controller..."
+#       kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+
+#       # 3. 等待控制器就绪（增加超时时间，并加入诊断）
+#       echo "⏳ 等待Ingress控制器就绪（最多5分钟）..."
+      
+#       # 先等待Pod被调度和创建
+#       for i in {1..30}; do
+#         if kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller --no-headers 2>/dev/null | grep -v "No resources found" | head -1; then
+#           echo "✅ Ingress控制器Pod已创建"
+#           break
+#         fi
+#         if [ $i -eq 30 ]; then
+#           echo "❌ Ingress控制器Pod创建超时"
+#           exit 1
+#         fi
+#         sleep 10
+#       done
+
+#       # 再等待Pod完全就绪
+#       if ! kubectl wait --namespace ingress-nginx \
+#         --for=condition=ready pod \
+#         --selector=app.kubernetes.io/component=controller \
+#         --timeout=300s; then
+#         echo "⚠️ Ingress控制器就绪等待超时，尝试诊断..."
+#         kubectl get pods -n ingress-nginx -o wide
+#         kubectl describe pods -n ingress-nginx -l app.kubernetes.io/component=controller
+#         kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
+#         # 不直接退出，尝试继续部署Ingress规则，有些情况控制器可能部分可用
+#       fi
+
+#       # 4. 应用Ingress路由规则
+#       echo "📄 应用Ingress路由规则..."
+#       kubectl apply -f k8s/ingress.yaml
+
+#       # 5. 验证部署
+#       echo "✅ Ingress部署完成"
+#       echo ""
+#       echo "📊 当前Ingress状态:"
+#       kubectl get ingress -n article-system
+#       kubectl get svc -n ingress-nginx ingress-nginx-controller
+#   only:
+#     - feature/initial-commit
+#     - main
+#     - develop
+#   tags:
+#     - docker
+
+# ========== 阶段6：部署Ingress控制器和规则 ==========
 deploy-ingress:
   stage: deploy-ingress
   image: $KUBECTL_IMAGE
@@ -424,21 +495,44 @@ deploy-ingress:
       echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
       export KUBECONFIG=~/.kube/config
 
-      # 1. 清理可能存在的旧Ingress控制器（如果之前部署失败残留）
+      # 1. 清理可能存在的旧Ingress控制器
       echo "🧹 检查并清理可能存在的旧Ingress控制器..."
       if kubectl get namespace ingress-nginx &>/dev/null; then
-        echo "⚠️  检测到已存在的ingress-nginx命名空间，正在清理..."
+        echo "⚠️ 检测到已存在的ingress-nginx命名空间，正在清理..."
         kubectl delete namespace ingress-nginx --ignore-not-found=true --wait=true
         echo "等待命名空间完全删除..."
         sleep 20
       fi
 
-      # 2. 部署Ingress控制器
-      echo "🚀 部署Nginx Ingress Controller..."
-      kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+      # 2. 下载官方YAML文件并使用sed替换镜像地址
+      echo "📥 下载并修改Ingress Nginx控制器YAML..."
+      YAML_URL="https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml"
+      
+      if curl -sL $YAML_URL -o ingress-nginx.yaml; then
+        echo "✅ 下载YAML文件成功"
+        
+        # 使用您测试成功的阿里云镜像替换
+        # 替换主控制器镜像
+        sed -i 's|registry.k8s.io/ingress-nginx/controller:v1.10.1@sha256:e24f39d3eed6bcc239a56f20098878845f62baa34b9f2be2fd2c38ce9fb0f29e|registry.cn-hangzhou.aliyuncs.com/google_containers/nginx-ingress-controller:v1.10.1|g' ingress-nginx.yaml
+        
+        # 替换证书生成器镜像 - 使用正确的镜像标签
+        # 修复5: 使用正确的证书生成器镜像
+        sed -i 's|registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.4.1@sha256:36d05b4077fb8e3d13663702fa337f124675ba8667cbd949c03a8e8ea6fa4366|registry.cn-hangzhou.aliyuncs.com/google_containers/kube-webhook-certgen:v1.4.1|g' ingress-nginx.yaml
+        
+        echo "✅ 镜像地址替换完成"
+      else
+        echo "❌ 下载YAML文件失败，使用本地文件"
+        # 如果下载失败，可以使用您提供的链接内容中的YAML
+        # 这里需要您确保有本地的YAML文件
+        exit 1
+      fi
 
-      # 3. 等待控制器就绪（增加超时时间，并加入诊断）
-      echo "⏳ 等待Ingress控制器就绪（最多5分钟）..."
+      # 3. 部署Ingress控制器
+      echo "🚀 部署Nginx Ingress Controller..."
+      kubectl apply -f ingress-nginx.yaml
+
+      # 4. 等待控制器就绪
+      echo "⏳ 等待Ingress控制器就绪..."
       
       # 先等待Pod被调度和创建
       for i in {1..30}; do
@@ -448,39 +542,53 @@ deploy-ingress:
         fi
         if [ $i -eq 30 ]; then
           echo "❌ Ingress控制器Pod创建超时"
+          kubectl get pods -n ingress-nginx
           exit 1
         fi
         sleep 10
       done
 
       # 再等待Pod完全就绪
-      if ! kubectl wait --namespace ingress-nginx \
+      if kubectl wait --namespace ingress-nginx \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
         --timeout=300s; then
-        echo "⚠️ Ingress控制器就绪等待超时，尝试诊断..."
+        echo "✅ Ingress控制器已就绪"
+      else
+        echo "⚠️ Ingress控制器就绪等待超时，查看状态..."
         kubectl get pods -n ingress-nginx -o wide
         kubectl describe pods -n ingress-nginx -l app.kubernetes.io/component=controller
-        kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
-        # 不直接退出，尝试继续部署Ingress规则，有些情况控制器可能部分可用
+        # 不直接退出，尝试继续部署
       fi
 
-      # 4. 应用Ingress路由规则
+      # 5. 应用Ingress路由规则
       echo "📄 应用Ingress路由规则..."
       kubectl apply -f k8s/ingress.yaml
 
-      # 5. 验证部署
+      # 6. 验证部署
       echo "✅ Ingress部署完成"
       echo ""
       echo "📊 当前Ingress状态:"
       kubectl get ingress -n article-system
       kubectl get svc -n ingress-nginx ingress-nginx-controller
+      
+      # 获取NodePort
+      INGRESS_PORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+      echo ""
+      echo "🎉 部署完成！"
+      echo "========================================"
+      echo "🌐 应用访问地址: http://49.233.185.174:$INGRESS_PORT"
+      echo "   - 首页: http://49.233.185.174:$INGRESS_PORT/"
+      echo "   - API: http://49.233.185.174:$INGRESS_PORT/api/"
+      echo "========================================"
   only:
     - feature/initial-commit
     - main
     - develop
   tags:
     - docker
+
+
 
 # # ========== 阶段7：部署Ingress控制器和规则 ==========
 # deploy-ingress:
