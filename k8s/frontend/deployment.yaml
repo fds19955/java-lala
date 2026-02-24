@@ -7,11 +7,11 @@ spec:
   replicas: 2
   selector:
     matchLabels:
-      app: article-frontend
+      app: article-frontend # 选择这个标签的pod
   template:
     metadata:
       labels:
-        app: article-frontend
+        app: article-frontend # 给将要创建的 Pod 贴上这个标签
     spec:
       imagePullSecrets:
         - name: aliyun-registry-key
