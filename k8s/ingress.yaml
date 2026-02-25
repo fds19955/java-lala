@@ -28,22 +28,3 @@ spec:
             name: article-frontend
             port:
               number: 80
-
-# 注释掉 nginx.ingress.kubernetes.io/rewrite-target: /，
-# 并添加 ingressClassName: nginx这两个修改。
-# 这里踩过坑
-# a) 注释掉 rewrite-target: /
-# 当有这个注解时，Ingress会将匹配的路径完全重写为 /
-# 例如：请求 /api/articles会被重写为 /articles转发给后端
-
-# b) 添加 ingressClassName: nginx
-# 根据您提供的链接内容（Nginx Ingress Controller的YAML），可以看到其中包含了一个 IngressClass资源：
-# apiVersion: networking.k8s.io/v1
-# kind: IngressClass
-# metadata:
-#   name: nginx
-# spec:
-#   controller: k8s.io/ingress-nginx
-# 这个 IngressClass的名称是 nginx
-# 您的Ingress需要明确指定使用这个IngressClass，Ingress控制器才会处理它
-# 之前您遇到的 "ignoring ingress because of error while validating ingress class" 错误就是因为缺少这个配置

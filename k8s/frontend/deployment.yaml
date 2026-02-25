@@ -30,7 +30,7 @@ metadata:
   name: article-frontend
   namespace: article-system
 spec:
-  type: NodePort  # 或使用LoadBalancer，根据云厂商调整
+  type: NodePort  # 根据云厂商调整
   ports:
   - port: 80
     targetPort: 80

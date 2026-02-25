@@ -24,7 +24,7 @@ variables:
 # ========== 阶段0：阿里云测试 ==========
 test-aliyun:
   stage: test-aliyun
-  image: docker:24.0.7  # 添加这一行
+  image: docker:24.0.7  
   script:
     - |
       # 添加调试信息
@@ -220,7 +220,7 @@ push-images:
 # ========== 阶段4：部署数据库（使用私有镜像，包含SQL初始化） ==========
 deploy-db:
   stage: deploy-db
-  # 使用您构建的私有kubectl镜像
+  # 使用私有kubectl镜像
   image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
   needs: ["push-images"]
   before_script:
@@ -279,7 +279,7 @@ deploy-db:
         sleep 2
       done
 
-      # 7. 数据库初始化 - 核心修复部分 (从您成功的脚本迁移)
+      # 7. 数据库初始化 - 核心修复部分 
       echo "📁 检查并导入SQL初始化脚本..."
       SQL_FILE="mysql/init/article_db.sql"
       if [ -f "$SQL_FILE" ]; then
@@ -289,7 +289,7 @@ deploy-db:
         echo "前3行内容预览:"
         head -3 "$SQL_FILE"
 
-        # 7.1 确保数据库存在 (与您成功脚本逻辑一致)
+        # 7.1 确保数据库存在
         echo "确保数据库 $MYSQL_DATABASE 存在..."
         kubectl exec -n article-system $MASTER_POD -- mysql -uroot -p$DB_ROOT_PASSWORD \
           -e "CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -344,7 +344,7 @@ deploy-db:
 # ========== 阶段5：部署前后端应用（使用私有镜像） ==========
 deploy:
   stage: deploy
-  # 使用您构建的私有kubectl镜像
+  # 使用构建的私有kubectl镜像
   image: crpi-qaxlisuwj9fp5gv9.cn-beijing.personal.cr.aliyuncs.com/fds-article/kubectl:1.29.0
   needs: ["deploy-db"]  # 依赖deploy-db阶段
   before_script:
@@ -439,7 +439,7 @@ deploy-ingress:
       if curl -sL $YAML_URL -o ingress-nginx.yaml; then
         echo "✅ 下载YAML文件成功"
         
-        # 使用您测试成功的阿里云镜像替换
+        # 使用测试成功的阿里云镜像替换
         # 替换主控制器镜像
         sed -i 's|registry.k8s.io/ingress-nginx/controller:v1.10.1@sha256:e24f39d3eed6bcc239a56f20098878845f62baa34b9f2be2fd2c38ce9fb0f29e|registry.cn-hangzhou.aliyuncs.com/google_containers/nginx-ingress-controller:v1.10.1|g' ingress-nginx.yaml
         
@@ -450,8 +450,8 @@ deploy-ingress:
         echo "✅ 镜像地址替换完成"
       else
         echo "❌ 下载YAML文件失败，使用本地文件"
-        # 如果下载失败，可以使用您提供的链接内容中的YAML
-        # 这里需要您确保有本地的YAML文件
+        # 如果下载失败，可以使用链接内容中的YAML
+        # 这里需要确保有本地的YAML文件
         exit 1
       fi
 
